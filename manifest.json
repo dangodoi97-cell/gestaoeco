@@ -1,0 +1,9 @@
+{
+  "name": "Gestão de Obras",
+  "short_name": "Obras",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#f0efe8",
+  "theme_color": "#ffffff",
+  "icons": []
+}

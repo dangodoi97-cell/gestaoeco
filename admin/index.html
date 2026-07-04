@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Obras Admin">
+<meta name="theme-color" content="#ffffff">
+<title>Painel Administrativo</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.47.0/tabler-icons.min.css">
+<link rel="stylesheet" href="../css/style.css">
+<style>
+  .client-card{background:var(--surface-2);border:0.5px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:8px;display:flex;align-items:center;gap:10px}
+  .avatar{width:38px;height:38px;border-radius:50%;background:var(--bg-accent);color:var(--text-accent);display:flex;align-items:center;justify-content:center;font-weight:600;font-size:14px;flex-shrink:0}
+  .diaria-add-row{display:flex;gap:8px;margin-bottom:8px}
+  .diaria-add-row select{flex:2}
+  .diaria-add-row input{flex:1;min-width:60px}
+</style>
+</head>
+<body>
+<div id="loading" class="loading-screen"><div class="spinner"></div></div>
+<div id="app" style="display:none">
+
+<div id="lightbox" onclick="closeLightbox()">
+  <button id="lightbox-close" onclick="closeLightbox()"><i class="ti ti-x"></i></button>
+  <img id="lightbox-img" src="" alt="">
+  <div id="lightbox-label"></div>
+</div>
+
+<div class="topbar">
+  <div id="topbar-content"><h1>Painel Admin</h1></div>
+  <div style="display:flex;gap:8px;align-items:center">
+    <button class="btn-sm btn-success" onclick="abrirNovaCobranca()" style="font-size:11px;padding:6px 10px"><i class="ti ti-cash"></i> Cobrar</button>
+    <button class="icon-btn" onclick="sairConta()"><i class="ti ti-logout"></i></button>
+  </div>
+</div>
+
+<!-- OBRAS -->
+<div id="page-obras" class="page active">
+  <div class="stat-row">
+    <div class="stat"><span class="stat-val" id="s-total">0</span><span class="stat-lbl">Total</span></div>
+    <div class="stat"><span class="stat-val" id="s-and">0</span><span class="stat-lbl">Em andamento</span></div>
+    <div class="stat"><span class="stat-val" id="s-conc">0</span><span class="stat-lbl">Concluídas</span></div>
+  </div>
+  <div class="sec-title">Obras <button class="btn-sm" onclick="abrirModalNovaObra()"><i class="ti ti-plus"></i> Nova obra</button></div>
+  <div id="lista-obras"></div>
+</div>
+
+<!-- DETALHE OBRA -->
+<div id="page-obra-detalhe" class="page">
+  <button class="back-btn" onclick="goPage('obras')"><i class="ti ti-arrow-left"></i> Voltar</button>
+  <div id="obra-detalhe-header"></div>
+  <div id="obra-encargos-area"></div>
+  <div id="obra-etapas"></div>
+</div>
+
+<!-- EM EXECUÇÃO -->
+<div id="page-execucao" class="page">
+  <div class="sec-title">Em execução</div>
+  <div id="lista-execucao"></div>
+</div>
+
+<!-- APROVAÇÃO — central de notificações -->
+<div id="page-aprovacao" class="page">
+  <div id="aprovacao-vazia" class="empty" style="display:none"><i class="ti ti-circle-check"></i><p>Nenhuma notificação pendente.</p></div>
+
+  <!-- Cobranças contestadas pelo cliente -->
+  <div id="secao-contestacoes" style="display:none">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;margin-top:4px">
+      <i class="ti ti-alert-circle" style="font-size:16px;color:#ef4444"></i>
+      <span style="font-size:13px;font-weight:700;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.5px">Cobranças contestadas</span>
+      <span id="badge-contestacoes" style="background:#e24b4a;color:#fff;border-radius:10px;padding:1px 8px;font-size:11px;font-weight:600"></span>
+    </div>
+    <div id="lista-contestacoes"></div>
+  </div>
+
+  <!-- Pagamentos dos clientes -->
+  <div id="secao-pagamentos-admin" style="display:none">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+      <i class="ti ti-cash" style="font-size:16px;color:#1D9E75"></i>
+      <span style="font-size:13px;font-weight:700;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.5px">Pagamentos a confirmar</span>
+      <span id="badge-pagamentos" style="background:#e24b4a;color:#fff;border-radius:10px;padding:1px 8px;font-size:11px;font-weight:600"></span>
+    </div>
+    <div id="lista-pagamentos-admin"></div>
+  </div>
+
+  <!-- Solicitações de orçamento -->
+  <div id="secao-solicitacoes" style="display:none">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;margin-top:4px">
+      <i class="ti ti-mail" style="font-size:16px;color:#f59e0b"></i>
+      <span style="font-size:13px;font-weight:700;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.5px">Solicitações de orçamento</span>
+      <span id="badge-solicitacoes" style="background:#e24b4a;color:#fff;border-radius:10px;padding:1px 8px;font-size:11px;font-weight:600"></span>
+    </div>
+    <div id="lista-solicitacoes"></div>
+  </div>
+
+  <!-- Orçamentos aguardando decisão do cliente -->
+  <div id="secao-servicos-aprov" style="display:none">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;margin-top:4px">
+      <i class="ti ti-file-invoice" style="font-size:16px;color:#3b82f6"></i>
+      <span style="font-size:13px;font-weight:700;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.5px">Orçamentos aguardando decisão do cliente</span>
+    </div>
+    <div id="lista-aprovacao"></div>
+  </div>
+</div>
+
+<!-- MODAL: ENVIAR ORÇAMENTO -->
+<div class="modal-overlay" id="modal-orcamento" onclick="bgClose(event,'modal-orcamento')">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title">Enviar orçamento</div>
+    <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px">A obra fica bloqueada para novas etapas/diárias até o cliente aprovar.</div>
+    <div class="mb"><label>Valor do orçamento (R$)</label><input type="text" id="orc-valor" placeholder="0,00" oninput="fmtVal(this)"></div>
+    <div class="mb"><label>Descrição / itens incluídos</label><textarea id="orc-desc" rows="4" placeholder="Detalhe o que está incluído no orçamento..."></textarea></div>
+    <button class="btn-main" onclick="salvarOrcamento()">Enviar para o cliente</button>
+  </div>
+</div>
+
+<!-- PARCEIROS -->
+<div id="page-parceiros" class="page">
+  <div class="sec-title">Parceiros <button class="btn-sm" onclick="abrirNovoParceiro()"><i class="ti ti-plus"></i> Novo</button></div>
+  <div id="lista-parceiros"></div>
+</div>
+
+<!-- DETALHE PARCEIRO -->
+<div id="page-parceiro-detalhe" class="page">
+  <button class="back-btn" onclick="goPage('parceiros')"><i class="ti ti-arrow-left"></i> Voltar</button>
+  <div id="parceiro-detalhe-content"></div>
+</div>
+
+<!-- MAIS -->
+<div id="page-mais" class="page">
+  <div class="sec-title">Mais opções</div>
+  <div class="list-card" onclick="goPage('precos')"><i class="ti ti-receipt"></i> &nbsp;Tabela de preços (cliente)</div>
+  <div class="list-card" onclick="goPage('repasse')"><i class="ti ti-coin"></i> &nbsp;Tabela de repasse (interna)</div>
+  <div class="list-card" onclick="goPage('diarias')"><i class="ti ti-calendar"></i> &nbsp;Tabela de diárias</div>
+  <div class="list-card" onclick="goPage('lixeira')"><i class="ti ti-trash"></i> &nbsp;Lixeira</div>
+  <div class="list-card" onclick="goPage('fechamento')"><i class="ti ti-wallet"></i> &nbsp;Fechamento de caixa</div>
+  <div class="list-card" onclick="goPage('clientes')"><i class="ti ti-users"></i> &nbsp;Clientes</div>
+  <div class="list-card" onclick="goPage('admins')"><i class="ti ti-shield"></i> &nbsp;Administradores</div>
+</div>
+
+<div id="page-pagamentos-cli" class="page" style="display:none"></div>
+<div id="page-lixeira" class="page">
+  <button class="back-btn" onclick="goPage('mais')"><i class="ti ti-arrow-left"></i> Voltar</button>
+  <div class="sec-title">Lixeira <button class="btn-sm btn-danger" onclick="limparLixeira()"><i class="ti ti-trash"></i> Limpar lixeira</button></div>
+  <div id="lista-lixeira"></div>
+</div>
+<div id="page-precos" class="page">
+  <button class="back-btn" onclick="goPage('mais')"><i class="ti ti-arrow-left"></i> Voltar</button>
+  <div class="sec-title">Tabela de preços (cliente) <button class="btn-sm" onclick="showModalPreco()"><i class="ti ti-plus"></i> Adicionar</button></div>
+  <div class="card"><div id="lista-precos"></div></div>
+</div>
+<div id="page-repasse" class="page">
+  <button class="back-btn" onclick="goPage('mais')"><i class="ti ti-arrow-left"></i> Voltar</button>
+  <div class="sec-title">Tabela de repasse (interna) <button class="btn-sm" onclick="showModalRepasse()"><i class="ti ti-plus"></i> Adicionar</button></div>
+  <p style="font-size:12px;color:var(--text-muted);margin-bottom:10px">Custo interno por serviço. O cliente nunca vê estes valores.</p>
+  <div class="card"><div id="lista-repasse"></div></div>
+</div>
+<div id="page-diarias" class="page">
+  <button class="back-btn" onclick="goPage('mais')"><i class="ti ti-arrow-left"></i> Voltar</button>
+  <div class="sec-title">Tabela de diárias <button class="btn-sm" onclick="showModalDiaria()"><i class="ti ti-plus"></i> Adicionar</button></div>
+  <div class="card"><div id="lista-diarias"></div></div>
+</div>
+<div id="page-fechamento" class="page">
+  <button class="back-btn" onclick="goPage('mais')"><i class="ti ti-arrow-left"></i> Voltar</button>
+  <div class="sec-title">Fechamento de caixa <button class="btn-sm btn-success" onclick="abrirNovaCobranca()"><i class="ti ti-cash"></i> Cobrar</button></div>
+  <div class="card">
+    <div class="g2 mb">
+      <div><label>Data inicial</label><input type="date" id="fechamento-data-inicio" onchange="renderFechamentoCaixa()"></div>
+      <div><label>Data final</label><input type="date" id="fechamento-data-fim" onchange="renderFechamentoCaixa()"></div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn-sm btn-success" onclick="renderFechamentoCaixa()"><i class="ti ti-calculator"></i> Calcular</button>
+      <button class="btn-sm" onclick="abrirNovaCobranca()"><i class="ti ti-send"></i> Cobrar</button>
+    </div>
+  </div>
+  <div id="fechamento-resumo" style="margin-top:10px"></div>
+  <div class="card" style="margin-top:10px">
+    <div class="sec-title" style="margin-bottom:8px">Despesas extras</div>
+    <div class="g2 mb">
+      <div><label>Descrição</label><input type="text" id="fechamento-extra-desc" placeholder="Ex: Gasolina"></div>
+      <div><label>Valor (R$)</label><input type="text" id="fechamento-extra-valor" placeholder="0,00" oninput="fmtVal(this)"></div>
+    </div>
+    <button class="btn-sm btn-success" onclick="adicionarDespesaExtra()"><i class="ti ti-plus"></i> Adicionar despesa</button>
+    <div id="fechamento-extras-lista" style="margin-top:8px"></div>
+  </div>
+  <div class="card" style="margin-top:10px">
+    <div class="sec-title" style="margin-bottom:8px">Itens do período</div>
+    <div id="fechamento-itens"></div>
+  </div>
+</div>
+<div id="page-clientes" class="page">
+  <button class="back-btn" onclick="goPage('mais')"><i class="ti ti-arrow-left"></i> Voltar</button>
+  <div class="sec-title">Clientes</div>
+  <div id="lista-clientes"></div>
+</div>
+<div id="page-admins" class="page">
+  <button class="back-btn" onclick="goPage('mais')"><i class="ti ti-arrow-left"></i> Voltar</button>
+  <div class="sec-title">Administradores <button class="btn-sm" onclick="showModal('modal-novo-admin')"><i class="ti ti-plus"></i> Novo</button></div>
+  <div id="lista-admins"></div>
+</div>
+
+<!-- NAV -->
+<nav class="bottom-nav">
+  <button class="nav-item active" onclick="goPage('obras')" id="nav-obras"><i class="ti ti-building"></i><span>Obras</span></button>
+  <button class="nav-item" onclick="goPage('execucao')" id="nav-execucao"><i class="ti ti-tools"></i><span>Execução</span></button>
+  <button class="nav-item" onclick="goPage('aprovacao')" id="nav-aprovacao"><i class="ti ti-bell"></i><span>Notificações</span><span class="dot" id="dot-aprov"></span></button>
+  <button class="nav-item" onclick="goPage('parceiros')" id="nav-parceiros"><i class="ti ti-users-group"></i><span>Parceiros</span></button>
+  <button class="nav-item" onclick="goPage('mais')" id="nav-mais"><i class="ti ti-dots"></i><span>Mais</span></button>
+</nav>
+
+<!-- ===== MODAIS ===== -->
+
+<!-- NOVA OBRA -->
+<div class="modal-overlay" id="modal-nova-obra" onclick="bgClose(event,'modal-nova-obra')">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title">Nova obra</div>
+    <div class="mb"><label>Nome da obra</label><input type="text" id="obra-nome" placeholder="Ex: Barracão Pré-Parto"></div>
+    <div class="mb"><label>Cliente responsável</label><select id="obra-cliente"><option value="">Sem cliente vinculado</option></select></div>
+    <div class="mb"><label>Localização</label><input type="text" id="obra-local" placeholder="Ex: Setor Norte, Fazenda..."></div>
+    <div class="g2 mb">
+      <div><label>Data de início</label><input type="date" id="obra-inicio"></div>
+      <div><label>Previsão de término</label><input type="date" id="obra-fim"></div>
+    </div>
+    <div class="mb"><label>Valor previsto total (R$) <span style="font-size:10px;color:var(--text-muted)">— estimativa para o cliente</span></label>
+      <input type="text" id="obra-valor-previsto" placeholder="0,00" oninput="fmtVal(this)">
+    </div>
+    <div class="toggle-row">
+      <span class="toggle-label">Mostrar nome do pedreiro ao cliente</span>
+      <label class="toggle-switch"><input type="checkbox" id="obra-mostrar-pedreiro" checked><span class="toggle-slider"></span></label>
+    </div>
+    <div class="mb"><label>Descrição (opcional)</label><textarea id="obra-desc" rows="2" placeholder="Detalhes..."></textarea></div>
+    <button class="btn-main" onclick="salvarObra()">Criar obra</button>
+  </div>
+</div>
+
+<!-- NOVA ETAPA -->
+<div class="modal-overlay" id="modal-nova-etapa" onclick="bgClose(event,'modal-nova-etapa')">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title">Adicionar etapa</div>
+    <div class="mb"><label>Tipo de serviço</label><select id="et-tipo" onchange="onTipoChange()"><option value="">Selecione...</option></select></div>
+
+    <div class="preco-sugerido-box" id="preco-sugerido-box">
+      <div class="preco-sugerido-info" id="preco-sugerido-info"></div>
+      <div class="preco-sugerido-calc" id="preco-sugerido-calc"></div>
+    </div>
+
+    <!-- M² (serviços) -->
+    <div class="g2 mb" id="box-metros" style="display:none">
+      <div><label>Quantidade (m²)</label><input type="number" id="et-metros" placeholder="0" min="0"></div>
+      <div><label>Valor cliente (R$)</label><input type="text" id="et-valor-calc" placeholder="—" readonly style="background:var(--surface-1);color:var(--text-success);font-weight:600"></div>
+    </div>
+    <div class="toggle-row" id="box-toggle-custom" style="display:none">
+      <span class="toggle-label">Definir outro valor</span>
+      <label class="toggle-switch"><input type="checkbox" id="toggle-custom" onchange="toggleCustomVal()"><span class="toggle-slider"></span></label>
+    </div>
+    <div class="valor-custom-box" id="valor-custom-box">
+      <div class="mb"><label>Novo preço por m² (R$)</label><input type="text" id="et-valor-custom" placeholder="0,00" oninput="fmtVal(this);recalcularComCustom()"></div>
+      <div class="mb"><label>Motivo</label><textarea id="et-motivo" rows="2" placeholder="Justifique o valor diferente..."></textarea></div>
+    </div>
+
+    <!-- DIÁRIAS -->
+    <div id="box-diarias" style="display:none">
+      <label>Adicionar diária</label>
+      <div class="diaria-add-row">
+        <select id="diaria-tipo"><option value="">Tipo de diária...</option></select>
+        <input type="number" id="diaria-qtd" placeholder="Qtd" min="1">
+        <button class="btn-sm btn-success" onclick="adicionarLinhaDiaria()"><i class="ti ti-plus"></i></button>
+      </div>
+      <div id="lista-linhas-diarias" style="margin-bottom:10px"></div>
+    </div>
+
+    <!-- REPASSE (aparece para serviços e diárias) -->
+    <div id="box-repasse" style="display:none">
+      <div class="mb"><label>Valor de repasse total (R$) <span style="font-size:10px;color:var(--text-muted)">— gerado automaticamente pela tabela</span></label>
+        <input type="text" id="et-repasse-calc" placeholder="0,00" oninput="fmtVal(this);atualizarRepasseIndividual()">
+      </div>
+    </div>
+
+    <!-- OUTROS — valor manual -->
+    <div id="box-outros" style="display:none">
+      <div class="mb"><label>Descrição do serviço</label><input type="text" id="et-outros-desc" placeholder="Ex: Instalação elétrica, Pintura..."></div>
+      <div class="g2 mb">
+        <div><label>Valor a cobrar (R$)</label><input type="text" id="et-outros-val" placeholder="0,00" oninput="fmtVal(this)"></div>
+        <div><label>Valor de repasse (R$)</label><input type="text" id="et-outros-repasse" placeholder="0,00" oninput="fmtVal(this)"></div>
+      </div>
+    </div>
+
+    <!-- PARCEIROS MÚLTIPLOS -->
+    <div class="mb">
+      <label>Parceiros responsáveis</label>
+      <div style="display:flex;gap:8px;margin-bottom:8px">
+        <select id="et-parceiro-add" style="flex:1"><option value="">Selecione parceiro...</option></select>
+        <button class="btn-sm btn-success" onclick="adicionarParceiroEtapa()"><i class="ti ti-plus"></i></button>
+      </div>
+      <div id="lista-parceiros-etapa" style="margin-bottom:4px"></div>
+      <div style="font-size:11px;color:var(--text-muted)">O repasse é dividido entre os parceiros. Você pode ajustar o valor individual de cada um.</div>
+    </div>
+    <div class="g2 mb">
+      <div><label>Data de início</label><input type="date" id="et-inicio"></div>
+      <div><label>Prazo previsto</label><input type="date" id="et-prazo"></div>
+    </div>
+    <div class="mb"><label>Detalhamento interno <span style="font-size:10px;color:var(--text-muted)">(só você vê)</span></label>
+      <textarea id="et-detalhe-interno" rows="2" placeholder="Ex: 10 dias, 2 pedreiros, João e Pedro..."></textarea>
+    </div>
+    <div class="mb"><label>Foto antes da execução</label>
+      <div class="photo-box" id="et-box-antes">
+        <input type="file" accept="image/*" onchange="prevFoto(this,'et-antes')">
+        <img class="photo-preview" id="et-prev-antes">
+        <div id="et-icon-antes"><i class="ti ti-photo-plus"></i><span>Adicionar foto</span></div>
+      </div>
+    </div>
+    <div class="mb"><label>Observação (visível ao cliente)</label><textarea id="et-obs" rows="2" placeholder="Detalhes..."></textarea></div>
+    <button class="btn-main" id="btn-salvar-etapa" onclick="salvarEtapa()">Adicionar etapa</button>
+  </div>
+</div>
+
+<!-- FOTO EXTRA -->
+<div class="modal-overlay" id="modal-foto-extra" onclick="bgClose(event,'modal-foto-extra')">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title">Adicionar foto da execução</div>
+    <div class="mb">
+      <div class="photo-box">
+        <input type="file" accept="image/*" onchange="prevFoto(this,'extra-foto')">
+        <img class="photo-preview" id="extra-prev-foto">
+        <div id="extra-icon-foto"><i class="ti ti-camera-plus"></i><span>Toque para escolher</span></div>
+      </div>
+    </div>
+    <div class="mb"><label>Legenda (opcional)</label><input type="text" id="extra-legenda" placeholder="Ex: Vista lateral, dia 3..."></div>
+    <button class="btn-main" id="btn-salvar-foto-extra" onclick="salvarFotoExtra()">Adicionar foto</button>
+  </div>
+</div>
+
+<!-- CONCLUIR ETAPA -->
+<div class="modal-overlay" id="modal-concluir" onclick="bgClose(event,'modal-concluir')">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title">Concluir etapa</div>
+    <div class="mb"><label>Foto após execução</label>
+      <div class="photo-box">
+        <input type="file" accept="image/*" onchange="prevFoto(this,'conc-depois')">
+        <img class="photo-preview" id="conc-prev-depois">
+        <div id="conc-icon-depois"><i class="ti ti-camera-check"></i><span>Foto depois</span></div>
+      </div>
+    </div>
+    <div class="mb"><label>Data de conclusão</label><input type="date" id="conc-data"></div>
+    <div class="mb"><label>Observações finais</label><textarea id="conc-obs" rows="2"></textarea></div>
+    <button class="btn-main" id="btn-concluir-etapa" onclick="confirmarConclusao()">Concluir etapa</button>
+  </div>
+</div>
+
+<!-- ENCARGO -->
+<div class="modal-overlay" id="modal-encargo" onclick="bgClose(event,'modal-encargo')">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title">Adicionar encargo</div>
+    <div class="mb"><label>Descrição</label><input type="text" id="enc-desc" placeholder="Ex: Aluguel de betoneira"></div>
+    <div class="mb"><label>Valor (R$)</label><input type="text" id="enc-valor" placeholder="0,00" oninput="fmtVal(this)"></div>
+    <div class="mb"><label>Comprovante (foto)</label>
+      <div class="photo-box">
+        <input type="file" accept="image/*" onchange="prevFoto(this,'enc-comprovante')">
+        <img class="photo-preview" id="enc-prev-comprovante">
+        <div id="enc-icon-comprovante"><i class="ti ti-receipt"></i><span>Foto do comprovante</span></div>
+      </div>
+    </div>
+    <button class="btn-main" id="btn-salvar-encargo" onclick="salvarEncargo()">Adicionar encargo</button>
+  </div>
+</div>
+
+<!-- PAGAMENTO PARCEIRO -->
+<div class="modal-overlay" id="modal-pagamento-parceiro" onclick="bgClose(event,'modal-pagamento-parceiro')">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title">Registrar pagamento</div>
+    <div class="mb"><label>Valor pago (R$)</label><input type="text" id="pag-valor" placeholder="0,00" oninput="fmtVal(this)"></div>
+    <div class="mb"><label>Observação (opcional)</label><input type="text" id="pag-obs" placeholder="Ex: Adiantamento semana 1"></div>
+    <div class="mb"><label>Comprovante (foto)</label>
+      <div class="photo-box">
+        <input type="file" accept="image/*" onchange="prevFoto(this,'pag-comprovante')">
+        <img class="photo-preview" id="pag-prev-comprovante">
+        <div id="pag-icon-comprovante"><i class="ti ti-receipt"></i><span>Foto do comprovante</span></div>
+      </div>
+    </div>
+    <button class="btn-main" id="btn-salvar-pagamento" onclick="salvarPagamentoParceiro()">Registrar pagamento</button>
+  </div>
+</div>
+
+<!-- TABELAS -->
+<div class="modal-overlay" id="modal-preco" onclick="bgClose(event,'modal-preco')">
+  <div class="modal"><div class="modal-handle"></div><div class="modal-title" id="preco-modal-title">Novo serviço</div>
+    <div class="mb"><label>Nome do serviço</label><input type="text" id="preco-nome" placeholder="Ex: Parede de Tijolo Sem Reboco Até 2m"></div>
+    <div class="mb"><label>Preço por m² (R$)</label><input type="text" id="preco-val" placeholder="0,00" oninput="fmtVal(this)"></div>
+    <button class="btn-main" id="btn-salvar-preco" onclick="salvarPreco()">Salvar</button>
+  </div>
+</div>
+<div class="modal-overlay" id="modal-repasse" onclick="bgClose(event,'modal-repasse')">
+  <div class="modal"><div class="modal-handle"></div><div class="modal-title" id="repasse-modal-title">Novo repasse</div>
+    <div class="mb"><label>Nome do serviço</label><input type="text" id="repasse-nome" placeholder="Ex: Parede de Tijolo Sem Reboco Até 2m"></div>
+    <div class="mb"><label>Valor de repasse (R$) <span style="font-size:10px;color:var(--text-muted)">— opcional, pode ser preenchido depois</span></label><input type="text" id="repasse-val" placeholder="0,00" oninput="fmtVal(this)"></div>
+    <button class="btn-main" id="btn-salvar-repasse" onclick="salvarRepasse()">Salvar</button>
+  </div>
+</div>
+<div class="modal-overlay" id="modal-diaria-cad" onclick="bgClose(event,'modal-diaria-cad')">
+  <div class="modal"><div class="modal-handle"></div><div class="modal-title" id="diaria-modal-title">Nova diária</div>
+    <div class="mb"><label>Função</label><input type="text" id="diaria-nome-cad" placeholder="Ex: Pedreiro, Servente, Encarregado"></div>
+    <div class="mb"><label>Valor por dia (R$)</label><input type="text" id="diaria-val-cad" placeholder="0,00" oninput="fmtVal(this)"></div>
+    <button class="btn-main" id="btn-salvar-diaria" onclick="salvarDiaria()">Salvar</button>
+  </div>
+</div>
+<div class="modal-overlay" id="modal-novo-parceiro" onclick="bgClose(event,'modal-novo-parceiro')">
+  <div class="modal"><div class="modal-handle"></div><div class="modal-title" id="parceiro-modal-title">Novo parceiro</div>
+    <div class="mb"><label>Nome completo</label><input type="text" id="parc-nome" placeholder="Nome do pedreiro/prestador"></div>
+    <div class="mb"><label>CPF ou CNPJ</label><input type="text" id="parc-doc" placeholder="000.000.000-00"></div>
+    <div class="mb"><label>Telefone</label><input type="tel" id="parc-tel" placeholder="(00) 00000-0000"></div>
+    <button class="btn-main" id="btn-salvar-parceiro" onclick="salvarParceiro()">Salvar</button>
+  </div>
+</div>
+<div class="modal-overlay" id="modal-novo-admin" onclick="bgClose(event,'modal-novo-admin')">
+  <div class="modal"><div class="modal-handle"></div><div class="modal-title">Novo administrador</div>
+    <div class="mb"><label>Nome</label><input type="text" id="adm-nome"></div>
+    <div class="mb"><label>E-mail</label><input type="email" id="adm-email"></div>
+    <div class="mb"><label>Senha provisória</label><input type="text" id="adm-senha"></div>
+    <button class="btn-main" id="btn-salvar-admin" onclick="salvarNovoAdmin()">Criar administrador</button>
+  </div>
+</div>
+<div class="modal-overlay" id="modal-aceitar-solicitacao" onclick="bgClose(event,'modal-aceitar-solicitacao')">
+  <div class="modal"><div class="modal-handle"></div><div class="modal-title">Aceitar solicitação</div>
+    <div class="mb"><label>Nome da obra</label><input type="text" id="aceitar-nome"></div>
+    <div class="mb"><label>Localização</label><input type="text" id="aceitar-local"></div>
+    <div class="g2 mb">
+      <div><label>Início</label><input type="date" id="aceitar-inicio"></div>
+      <div><label>Previsão</label><input type="date" id="aceitar-fim"></div>
+    </div>
+    <div class="toggle-row">
+      <span class="toggle-label">Mostrar nome do pedreiro ao cliente</span>
+      <label class="toggle-switch"><input type="checkbox" id="aceitar-mostrar-pedreiro" checked><span class="toggle-slider"></span></label>
+    </div>
+    <button class="btn-main" id="btn-aceitar-solicitacao" onclick="confirmarAceiteSolicitacao()">Criar obra e vincular ao cliente</button>
+  </div>
+</div>
+
+<!-- EDITAR ETAPA -->
+<div class="modal-overlay" id="modal-editar-etapa" onclick="bgClose(event,'modal-editar-etapa')">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title">Editar etapa</div>
+    <div class="mb"><label>Tipo de serviço</label><select id="edit-et-tipo"><option value="">Selecione...</option></select></div>
+    <div class="g2 mb">
+      <div><label>Valor cliente (R$)</label><input type="text" id="edit-et-val" placeholder="0,00" oninput="fmtVal(this)"></div>
+      <div><label>Repasse total (R$)</label><input type="text" id="edit-et-repasse" placeholder="0,00" oninput="fmtVal(this);atualizarRepasseIndividualEdit()"></div>
+    </div>
+    <div class="g2 mb">
+      <div><label>Quantidade (m²)</label><input type="text" id="edit-et-metros" placeholder="opcional"></div>
+    </div>
+    <div class="mb">
+      <label>Parceiros responsáveis</label>
+      <div style="display:flex;gap:8px;margin-bottom:8px">
+        <select id="edit-et-parceiro-add" style="flex:1"><option value="">Selecione parceiro...</option></select>
+        <button class="btn-sm btn-success" onclick="adicionarParceiroEtapaEdit()"><i class="ti ti-plus"></i></button>
+      </div>
+      <div id="edit-lista-parceiros-etapa" style="margin-bottom:4px"></div>
+    </div>
+    <div class="g2 mb">
+      <div><label>Data de início</label><input type="date" id="edit-et-inicio"></div>
+      <div><label>Prazo previsto</label><input type="date" id="edit-et-prazo"></div>
+    </div>
+    <div class="mb"><label>Motivo do valor personalizado</label><input type="text" id="edit-et-motivo" placeholder="Opcional"></div>
+    <div class="mb"><label>Detalhamento interno</label><textarea id="edit-et-detalhe" rows="2" placeholder="Só você vê..."></textarea></div>
+    <div class="mb"><label>Observação (visível ao cliente)</label><textarea id="edit-et-obs" rows="2"></textarea></div>
+    <div class="mb"><label>Foto antes da execução</label>
+      <div class="photo-box" style="position:relative">
+        <input type="file" accept="image/*" onchange="editFotoAntesChanged(this)">
+        <img class="photo-preview" id="edit-et-prev-antes">
+        <div id="edit-et-icon-antes"><i class="ti ti-photo-plus"></i><span>Substituir foto</span></div>
+      </div>
+      <button class="btn-sm btn-danger" id="edit-et-remover-foto" onclick="removerFotoAntesEdit()" style="margin-top:6px;display:none"><i class="ti ti-trash"></i> Remover foto</button>
+    </div>
+    <button class="btn-main" id="btn-salvar-edicao-etapa" onclick="salvarEdicaoEtapa()">Salvar alterações</button>
+  </div>
+</div>
+
+<!-- DIÁRIA AVULSA -->
+<div class="modal-overlay" id="modal-diaria-avulsa" onclick="bgClose(event,'modal-diaria-avulsa')">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title" id="modal-diaria-avulsa-title">📅 Registrar diária</div>
+    <div class="mb"><label>Data</label><input type="date" id="da-data"></div>
+    <div style="background:var(--surface-1);border-radius:var(--radius);padding:12px;margin-bottom:12px">
+      <label>Adicionar linha de diária</label>
+      <div style="display:flex;gap:8px;margin-top:6px;margin-bottom:8px">
+        <select id="da-tipo" style="flex:2"><option value="">Tipo de diária...</option></select>
+        <input type="number" id="da-qtd" placeholder="Qtd" min="0.5" step="0.5" style="flex:1;min-width:70px">
+        <button class="btn-sm btn-success" onclick="adicionarLinhaDiariaAvulsa()"><i class="ti ti-plus"></i></button>
+      </div>
+      <div style="font-size:11px;color:var(--text-muted)">Aceita decimais: 0.5 = meia diária, 2.5 = 2 diárias e meia</div>
+    </div>
+    <div id="da-lista-linhas" style="margin-bottom:12px"></div>
+    <div class="g2 mb">
+      <div>
+        <label>Foto início do dia</label>
+        <div class="photo-box">
+          <input type="file" accept="image/*" onchange="diariaFotoChanged(this,'antes')">
+          <img class="photo-preview" id="da-prev-antes">
+          <div id="da-icon-antes"><i class="ti ti-sun"></i><span>Início</span></div>
+        </div>
+      </div>
+      <div>
+        <label>Foto fim do dia</label>
+        <div class="photo-box">
+          <input type="file" accept="image/*" onchange="diariaFotoChanged(this,'depois')">
+          <img class="photo-preview" id="da-prev-depois">
+          <div id="da-icon-depois"><i class="ti ti-moon"></i><span>Fim</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="mb"><label>Observação do dia</label><textarea id="da-obs" rows="2" placeholder="O que foi feito hoje..."></textarea></div>
+    <button class="btn-main" id="btn-salvar-diaria-avulsa" onclick="salvarDiariaAvulsa()">Registrar diária</button>
+  </div>
+</div>
+
+<!-- MODAL: NOVA COBRANÇA -->
+<div class="modal-overlay" id="modal-nova-cobranca" onclick="bgClose(event,'modal-nova-cobranca')">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title">Solicitar pagamento</div>
+    <div class="mb"><label>Cliente</label>
+      <select id="cob-cliente" onchange="carregarEtapasCobranca()">
+        <option value="">Selecione o cliente...</option>
+      </select>
+    </div>
+    <div class="mb"><label>Obra</label>
+      <select id="cob-obra" onchange="carregarEtapasCobranca()">
+        <option value="">Selecione a obra...</option>
+      </select>
+    </div>
+    <div id="cob-etapas-area" style="display:none">
+      <label>Selecione as etapas para cobrar</label>
+      <div id="cob-lista-etapas" style="margin:6px 0 12px"></div>
+      <div style="background:var(--surface-1);border-radius:8px;padding:10px;margin-bottom:12px">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span style="font-size:13px;font-weight:600">Total selecionado:</span>
+          <span id="cob-total" style="font-size:16px;font-weight:700;color:var(--text-success)">R$ 0,00</span>
+        </div>
+      </div>
+    </div>
+    <div class="mb"><label>Mensagem ao cliente (opcional)</label>
+      <textarea id="cob-mensagem" rows="2" placeholder="Ex: Referente aos serviços executados no período 01/07 a 11/07..."></textarea>
+    </div>
+    <div style="background:var(--bg-accent);border:0.5px solid #93c5fd;border-radius:8px;padding:12px;margin-bottom:12px">
+      <div style="font-size:12px;font-weight:600;color:var(--text-accent);margin-bottom:8px"><i class="ti ti-brand-whatsapp"></i> Dados para pagamento PIX</div>
+      <div class="mb"><label>Tipo de chave PIX</label>
+        <select id="cob-pix-tipo">
+          <option value="cpf">CPF</option>
+          <option value="cnpj">CNPJ</option>
+          <option value="email">E-mail</option>
+          <option value="telefone">Telefone</option>
+          <option value="aleatoria">Chave aleatória</option>
+        </select>
+      </div>
+      <div class="mb"><label>Chave PIX</label><input type="text" id="cob-pix-chave" placeholder="Digite sua chave PIX"></div>
+      <div class="mb"><label>Nome do favorecido</label><input type="text" id="cob-pix-nome" placeholder="Nome que aparece no PIX"></div>
+      <div class="mb" style="margin-bottom:0"><label>Banco</label><input type="text" id="cob-pix-banco" placeholder="Ex: Nubank, Itaú, BB..."></div>
+    </div>
+    <button class="btn-main" id="btn-enviar-cobranca" onclick="enviarCobranca()"><i class="ti ti-send"></i> Enviar cobrança ao cliente</button>
+  </div>
+</div>
+
+</div><!-- /app -->
+<div class="toast" id="toast"></div>
+<script type="module" src="app.js"></script>
+</body>
+</html>

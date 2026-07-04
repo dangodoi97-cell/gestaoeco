@@ -1,0 +1,102 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function logado() { return request.auth != null; }
+    function meuPerfil() { return get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data; }
+    function souAdmin() { return logado() && meuPerfil().tipo == 'admin'; }
+    function souClienteAprovado() { return logado() && meuPerfil().tipo == 'cliente' && meuPerfil().status == 'aprovado'; }
+
+    match /usuarios/{uid} {
+      allow read: if logado() && (request.auth.uid == uid || souAdmin());
+      allow create: if logado() && request.auth.uid == uid;
+      allow update: if souAdmin() || (logado() && request.auth.uid == uid);
+      allow delete: if souAdmin();
+    }
+
+    match /obras/{obraId} {
+      allow read: if logado();
+      allow create, delete: if souAdmin();
+      allow update: if souAdmin() ||
+        (souClienteAprovado() && resource.data.clienteId == request.auth.uid &&
+         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['avaliacaoNota', 'avaliacaoComentario', 'avaliadoEm']));
+
+      match /etapas/{etapaId} {
+        allow read: if logado();
+        allow create, update, delete: if souAdmin();
+      }
+
+      match /encargos/{encargoId} {
+        allow read, create, update, delete: if souAdmin();
+      }
+    }
+
+    match /precos/{precoId} {
+      allow read: if logado();
+      allow create, update, delete: if souAdmin();
+    }
+
+    match /repasses/{repasseId} {
+      allow read, create, update, delete: if souAdmin();
+    }
+
+    match /diarias/{diariaId} {
+      allow read: if logado();
+      allow create, update, delete: if souAdmin();
+    }
+
+    match /parceiros/{parceiroId} {
+      allow read: if logado();
+      allow create, update, delete: if souAdmin();
+
+      match /pagamentos/{pagamentoId} {
+        allow read: if logado();
+        allow create, update, delete: if souAdmin();
+      }
+
+      match /notificacoes/{notifId} {
+        allow read: if logado();
+        allow create, update, delete: if souAdmin();
+      }
+    }
+
+    match /fechamentos_caixa/{fechamentoId} {
+      allow read: if logado();
+      allow create, update, delete: if souAdmin();
+    }
+
+    match /solicitacoes/{solicitacaoId} {
+      allow read: if logado();
+      allow create: if souClienteAprovado() && request.resource.data.clienteId == request.auth.uid;
+      allow update, delete: if souAdmin();
+    }
+
+    match /pagamentos_cliente/{pagId} {
+      allow read: if logado();
+      allow create: if souClienteAprovado() && request.resource.data.clienteId == request.auth.uid;
+      allow update: if souAdmin();
+      allow delete: if souAdmin() || (souClienteAprovado() && resource.data.clienteId == request.auth.uid && resource.data.status == 'pendente');
+    }
+
+    match /solicitacoes_pagamento/{solId} {
+      allow read: if logado();
+      allow create, update, delete: if souAdmin();
+      allow update: if souAdmin() || (souClienteAprovado() && resource.data.clienteId == request.auth.uid &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'contestacao', 'comprovante', 'formaPagamento', 'dataPagamento']));
+    }
+
+    match /notificacoes/{notifId} {
+      allow read: if logado();
+      allow create, delete: if souAdmin();
+      allow update: if souAdmin() || (souClienteAprovado() && resource.data.clienteId == request.auth.uid &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lida']));
+    }
+
+    match /orcamentos/{orcId} {
+      allow read: if logado();
+      allow create, delete: if souAdmin();
+      allow update: if souAdmin() || (souClienteAprovado() && resource.data.clienteId == request.auth.uid &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'motivo', 'decididoEm']));
+    }
+  }
+}
