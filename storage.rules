@@ -1,0 +1,15 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function logado() { return request.auth != null; }
+
+    match /obras/{obraId}/{allPaths=**} {
+      // Qualquer usuário autenticado pode ler (admin ou cliente vinculado).
+      // A app só mostra a obra certa para o cliente certo via Firestore;
+      // aqui garantimos que pelo menos exige login.
+      allow read: if logado();
+      allow write: if logado();
+    }
+  }
+}

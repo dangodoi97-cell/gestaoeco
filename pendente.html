@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aguardando aprovação</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.47.0/tabler-icons.min.css">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="pending-screen">
+  <i class="ti ti-clock-hour-4"></i>
+  <h2>Sua conta está em análise</h2>
+  <p>O administrador precisa aprovar seu cadastro antes de você acessar o sistema.<br>Isso geralmente é rápido — tente entrar novamente em breve.</p>
+  <button class="btn-main" style="max-width:240px;margin:24px auto 0" onclick="sair()">Sair</button>
+</div>
+<script type="module">
+import { logout, observarAuth } from './js/auth.js';
+window.sair = async () => { await logout(); window.location.href = 'index.html'; };
+// Se já foi aprovado, redireciona automaticamente
+observarAuth((user, perfil) => {
+  if (!user) { window.location.href = 'index.html'; return; }
+  if (perfil && perfil.tipo === 'cliente' && perfil.status === 'aprovado') window.location.href = 'cliente/index.html';
+  if (perfil && perfil.tipo === 'admin') window.location.href = 'admin/index.html';
+});
+</script>
+</body>
+</html>

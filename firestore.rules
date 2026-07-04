@@ -1,0 +1,98 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function logado() { return request.auth != null; }
+    function meuPerfil() { return get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data; }
+    function souAdmin() { return logado() && meuPerfil().tipo == 'admin'; }
+    function souClienteAprovado() { return logado() && meuPerfil().tipo == 'cliente' && meuPerfil().status == 'aprovado'; }
+
+    match /usuarios/{uid} {
+      allow read: if logado() && (request.auth.uid == uid || souAdmin());
+      allow create: if logado() && request.auth.uid == uid;
+      allow update: if souAdmin() || (logado() && request.auth.uid == uid);
+      allow delete: if souAdmin();
+    }
+
+    match /obras/{obraId} {
+      allow read: if souAdmin() || (souClienteAprovado() && resource.data.clienteId == request.auth.uid);
+      allow create, delete: if souAdmin();
+      // Cliente só pode escrever a própria avaliação da obra concluída
+      allow update: if souAdmin() ||
+        (souClienteAprovado() && resource.data.clienteId == request.auth.uid &&
+         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['avaliacaoNota', 'avaliacaoComentario', 'avaliadoEm']));
+
+      match /etapas/{etapaId} {
+        allow read: if souAdmin() || souClienteAprovado();
+        allow create, update, delete: if souAdmin();
+      }
+
+      match /encargos/{encargoId} {
+        allow read, create, update, delete: if souAdmin();
+      }
+    }
+
+    match /precos/{precoId} {
+      allow read: if souAdmin() || souClienteAprovado();
+      allow create, update, delete: if souAdmin();
+    }
+
+    match /repasses/{repasseId} {
+      allow read, create, update, delete: if souAdmin();
+    }
+
+    match /diarias/{diariaId} {
+      allow read: if souAdmin() || souClienteAprovado();
+      allow create, update, delete: if souAdmin();
+    }
+
+    match /parceiros/{parceiroId} {
+      allow read, create, update, delete: if souAdmin();
+
+      match /pagamentos/{pagamentoId} {
+        allow read, create, update, delete: if souAdmin();
+      }
+    }
+
+    match /solicitacoes/{solicitacaoId} {
+      allow read: if souAdmin() || (souClienteAprovado() && resource.data.clienteId == request.auth.uid);
+      allow create: if souClienteAprovado() && request.resource.data.clienteId == request.auth.uid;
+      allow update, delete: if souAdmin();
+    }
+
+    // PAGAMENTOS DO CLIENTE
+    match /pagamentos_cliente/{pagId} {
+      allow read: if souAdmin() || (souClienteAprovado() && resource.data.clienteId == request.auth.uid);
+      allow create: if souClienteAprovado() && request.resource.data.clienteId == request.auth.uid;
+      allow update: if souAdmin();
+      allow delete: if souAdmin() || (souClienteAprovado() && resource.data.clienteId == request.auth.uid && resource.data.status == 'pendente');
+    }
+
+    // SOLICITAÇÕES DE PAGAMENTO (admin cobra cliente)
+    match /solicitacoes_pagamento/{solId} {
+      allow read: if souAdmin() || (souClienteAprovado() && resource.data.clienteId == request.auth.uid);
+      allow create, update, delete: if souAdmin();
+      // Cliente pode atualizar status (aceitar/contestar) e adicionar comprovante
+      allow update: if souAdmin() || (souClienteAprovado() && resource.data.clienteId == request.auth.uid &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'contestacao', 'comprovante', 'formaPagamento', 'dataPagamento']));
+    }
+
+    // NOTIFICAÇÕES (feed informativo enviado pelo admin ao cliente)
+    match /notificacoes/{notifId} {
+      allow read: if souAdmin() || (souClienteAprovado() && resource.data.clienteId == request.auth.uid);
+      allow create, delete: if souAdmin();
+      // Cliente só pode marcar como lida
+      allow update: if souAdmin() || (souClienteAprovado() && resource.data.clienteId == request.auth.uid &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lida']));
+    }
+
+    // ORÇAMENTOS (único fluxo que exige aprovação do cliente)
+    match /orcamentos/{orcId} {
+      allow read: if souAdmin() || (souClienteAprovado() && resource.data.clienteId == request.auth.uid);
+      allow create, delete: if souAdmin();
+      // Cliente só pode aprovar/rejeitar (status + motivo + decididoEm)
+      allow update: if souAdmin() || (souClienteAprovado() && resource.data.clienteId == request.auth.uid &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'motivo', 'decididoEm']));
+    }
+  }
+}

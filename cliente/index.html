@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="EcoSistema">
+<meta name="theme-color" content="#0f172a">
+<title>EcoSistema — Cliente</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.47.0/tabler-icons.min.css">
+<link rel="stylesheet" href="../css/style.css">
+<style>
+  :root { --brand: #1D9E75; --brand-dark: #157a5a; }
+  .topbar { background: #0f172a; border-bottom: none; }
+  .topbar h1 { color: #fff; font-size: 16px; }
+  .topbar .sub { color: #94a3b8; }
+  .icon-btn { color: #94a3b8; }
+  .obra-card { background: var(--surface-2); border: 0.5px solid var(--border); border-radius: 14px; padding: 16px; margin-bottom: 10px; cursor: pointer; transition: box-shadow .15s; }
+  .obra-card:active { opacity: .85; }
+  .etapa-card { background: var(--surface-2); border: 0.5px solid var(--border); border-radius: 12px; padding: 14px 16px; margin-bottom: 8px; }
+  .etapa-valor { font-size: 18px; font-weight: 700; color: var(--brand); }
+  .sol-card { background: var(--surface-2); border: 1.5px solid #fcd34d; border-radius: 12px; padding: 14px 16px; margin-bottom: 8px; }
+  .sol-card.recusada { border-color: var(--border-danger); }
+  .progress-ring { width: 48px; height: 48px; flex-shrink: 0; }
+  .nav-item.active { color: var(--brand); }
+  .btn-brand { width: 100%; padding: 13px; background: var(--brand); color: #fff; border: none; border-radius: var(--radius); font-size: 15px; font-weight: 600; cursor: pointer; }
+  .btn-brand:active { background: var(--brand-dark); }
+  .chip { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+  .chip-green { background: #dcfce7; color: #15803d; }
+  .chip-yellow { background: #fef9c3; color: #a16207; }
+  .chip-red { background: #fee2e2; color: #b91c1c; }
+  .chip-blue { background: #dbeafe; color: #1d4ed8; }
+  .chip-gray { background: var(--surface-1); color: var(--text-muted); }
+  .financial-bar { height: 8px; background: var(--surface-1); border-radius: 4px; overflow: hidden; margin: 8px 0; }
+  .financial-fill { height: 100%; background: var(--brand); border-radius: 4px; transition: width .4s; }
+  .foto-thumb { width: 100%; height: 120px; object-fit: cover; border-radius: 8px; cursor: pointer; display: block; }
+  .fotos-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 8px; margin-top: 10px; }
+  .section-label { font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: .6px; margin: 16px 0 8px; }
+</style>
+</head>
+<body>
+<div id="loading" class="loading-screen"><div class="spinner"></div></div>
+<div id="app" style="display:none">
+
+<!-- LIGHTBOX -->
+<div id="lightbox" onclick="closeLightbox()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.95);z-index:1000;align-items:center;justify-content:center;flex-direction:column">
+  <button id="lightbox-close" onclick="closeLightbox()" style="position:absolute;top:16px;right:16px;background:rgba(255,255,255,.15);border:none;color:#fff;width:36px;height:36px;border-radius:50%;font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center"><i class="ti ti-x"></i></button>
+  <img id="lightbox-img" src="" alt="" style="max-width:100%;max-height:85vh;object-fit:contain;border-radius:4px">
+  <div id="lightbox-label" style="color:rgba(255,255,255,.6);font-size:13px;margin-top:12px"></div>
+</div>
+
+<!-- TOPBAR -->
+<div class="topbar">
+  <div id="topbar-content">
+    <h1>EcoSistema</h1>
+    <div class="sub" id="topbar-sub">Bem-vindo</div>
+  </div>
+  <button class="icon-btn" onclick="sairConta()"><i class="ti ti-logout"></i></button>
+</div>
+
+<!-- OBRAS -->
+<div id="page-obras" class="page active">
+  <div id="lista-solicitacoes-pendentes"></div>
+  <div class="section-label">Minhas obras</div>
+  <div id="lista-obras"></div>
+  <button class="btn-brand" style="margin-top:8px" onclick="abrirNovaSolicitacao()"><i class="ti ti-plus"></i> Solicitar novo serviço</button>
+</div>
+
+<!-- DETALHE OBRA -->
+<div id="page-obra-detalhe" class="page">
+  <button class="back-btn" onclick="goPage('obras')"><i class="ti ti-arrow-left"></i> Voltar</button>
+  <div id="obra-detalhe-header"></div>
+  <div id="obra-etapas"></div>
+</div>
+
+<!-- APROVAÇÃO -->
+<div id="page-aprovacao" class="page">
+  <div id="lista-aprovacao"></div>
+</div>
+
+<!-- FINANCEIRO -->
+<div id="page-financeiro" class="page">
+  <div id="lista-financeiro"></div>
+</div>
+
+<!-- HISTÓRICO -->
+<div id="page-historico" class="page">
+  <div id="lista-historico"></div>
+</div>
+
+<!-- PREÇOS -->
+<div id="page-precos" class="page">
+  <div class="section-label">Tabela de preços de referência</div>
+  <div class="card"><div id="lista-precos"></div></div>
+</div>
+
+<!-- NAV -->
+<nav class="bottom-nav">
+  <button class="nav-item active" onclick="goPage('obras')" id="nav-obras"><i class="ti ti-building"></i><span>Obras</span></button>
+  <button class="nav-item" onclick="goPage('aprovacao')" id="nav-aprovacao"><i class="ti ti-bell"></i><span>Notificações</span><span class="dot" id="dot-aprov"></span></button>
+  <button class="nav-item" onclick="goPage('financeiro')" id="nav-financeiro"><i class="ti ti-cash"></i><span>Financeiro</span></button>
+  <button class="nav-item" onclick="goPage('historico')" id="nav-historico"><i class="ti ti-history"></i><span>Histórico</span></button>
+  <button class="nav-item" onclick="goPage('precos')" id="nav-precos"><i class="ti ti-receipt"></i><span>Preços</span></button>
+</nav>
+
+<!-- MODAL: SOLICITAR SERVIÇO -->
+<div class="modal-overlay" id="modal-nova-solicitacao" onclick="bgClose(event,'modal-nova-solicitacao')">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title" id="sol-modal-title">Solicitar serviço</div>
+    <div class="mb"><label>Tipo de serviço</label>
+      <select id="sol-tipo"><option value="">Selecione...</option></select>
+    </div>
+    <div class="mb"><label>Localização</label><input type="text" id="sol-local" placeholder="Endereço ou ponto de referência"></div>
+    <div class="mb"><label>Descrição do que você precisa</label>
+      <textarea id="sol-desc" rows="3" placeholder="Descreva o serviço, tamanho aproximado, urgência..."></textarea>
+    </div>
+    <div class="mb">
+      <label>Fotos do local (opcional)</label>
+      <div class="photo-box" id="sol-box-fotos">
+        <input type="file" accept="image/*" multiple onchange="prevFotosSolicitacao(this)">
+        <i class="ti ti-photo-plus"></i><span>Toque para escolher fotos</span>
+      </div>
+      <div class="fotos-row" id="sol-fotos-preview" style="margin-top:8px"></div>
+    </div>
+    <button class="btn-brand" id="btn-salvar-solicitacao" onclick="salvarSolicitacao()">Enviar solicitação</button>
+  </div>
+</div>
+
+<!-- MODAL: DECIDIR ORÇAMENTO -->
+<div class="modal-overlay" id="modal-orcamento" onclick="bgClose(event,'modal-orcamento')">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title">Orçamento recebido</div>
+    <div id="orcamento-conteudo"></div>
+    <div class="mb" id="orcamento-motivo-wrap" style="display:none;margin-top:12px">
+      <label>Motivo da rejeição</label>
+      <textarea id="orcamento-motivo" rows="3" placeholder="Descreva o motivo para o administrador ajustar o orçamento..."></textarea>
+    </div>
+    <div class="confirm-bar" id="orcamento-acoes">
+      <button class="btn-sm btn-success" onclick="aprovarOrcamentoAtivo()" style="flex:1;justify-content:center;padding:12px"><i class="ti ti-check"></i> Aprovar</button>
+      <button class="btn-sm btn-danger" onclick="mostrarMotivoRejeicao()" style="flex:1;justify-content:center;padding:12px"><i class="ti ti-x"></i> Rejeitar</button>
+    </div>
+    <button class="btn-sm btn-danger" id="btn-confirmar-rejeicao" style="width:100%;justify-content:center;padding:12px;display:none" onclick="rejeitarOrcamentoAtivo()"><i class="ti ti-x"></i> Confirmar rejeição</button>
+  </div>
+</div>
+
+<!-- MODAL: AVALIAR OBRA -->
+<div class="modal-overlay" id="modal-avaliacao" onclick="bgClose(event,'modal-avaliacao')">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title">Avaliar serviço</div>
+    <div style="display:flex;justify-content:center;gap:6px;margin:14px 0" id="avaliacao-estrelas"></div>
+    <div class="mb"><label>Comentário (opcional)</label>
+      <textarea id="avaliacao-comentario" rows="3" placeholder="Conte como foi sua experiência..."></textarea>
+    </div>
+    <button class="btn-brand" onclick="enviarAvaliacaoObra()">Enviar avaliação</button>
+  </div>
+</div>
+
+<!-- MODAL: RESPONDER COBRANÇA -->
+<div class="modal-overlay" id="modal-cobranca" onclick="bgClose(event,'modal-cobranca')">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title">Solicitação de pagamento</div>
+    <div id="cob-detalhe-cliente"></div>
+    <div id="cob-form-aceitar" style="display:none">
+      <div class="section-label">Confirmar pagamento</div>
+      <div class="mb"><label>Forma de pagamento</label>
+        <select id="cob-forma-cli">
+          <option value="pix">PIX</option>
+          <option value="transferencia">Transferência bancária</option>
+          <option value="dinheiro">Dinheiro</option>
+          <option value="outro">Outro</option>
+        </select>
+      </div>
+      <div class="mb"><label>Comprovante (opcional)</label>
+        <div class="photo-box">
+          <input type="file" accept="image/*" onchange="cobFotoChanged(this)">
+          <img class="photo-preview" id="cob-prev-comprovante">
+          <div id="cob-icon-comprovante"><i class="ti ti-receipt"></i><span>Foto do comprovante</span></div>
+        </div>
+      </div>
+      <button class="btn-brand" id="btn-confirmar-pag-cob" onclick="confirmarPagamentoCob()"><i class="ti ti-check"></i> Confirmar pagamento</button>
+      <button class="btn-sm" style="width:100%;justify-content:center;margin-top:8px" onclick="voltarCobranca()">Voltar</button>
+    </div>
+    <div id="cob-form-contestar" style="display:none">
+      <div class="section-label">Contestar cobrança</div>
+      <div class="mb"><label>Descreva o motivo da contestação</label>
+        <textarea id="cob-motivo-contestacao" rows="3" placeholder="Ex: O valor está incorreto, a etapa X não foi concluída..."></textarea>
+      </div>
+      <button class="btn-sm btn-danger" style="width:100%;justify-content:center;padding:12px" id="btn-contestar-cob" onclick="contestarCobranca()"><i class="ti ti-x"></i> Enviar contestação</button>
+      <button class="btn-sm" style="width:100%;justify-content:center;margin-top:8px" onclick="voltarCobranca()">Voltar</button>
+    </div>
+    <div id="cob-acoes-iniciais">
+      <div class="confirm-bar" style="margin-top:12px">
+        <button class="btn-sm btn-success" onclick="mostrarFormAceitar()" style="flex:1;justify-content:center;padding:12px"><i class="ti ti-cash"></i> Aceitar e pagar</button>
+        <button class="btn-sm btn-danger" onclick="mostrarFormContestar()" style="flex:1;justify-content:center;padding:12px"><i class="ti ti-alert-circle"></i> Contestar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: PAGAMENTO DO CLIENTE -->
+<div class="modal-overlay" id="modal-pagamento-cliente" onclick="bgClose(event,'modal-pagamento-cliente')">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title">Registrar pagamento</div>
+    <div style="font-size:13px;color:var(--text-muted);margin-bottom:16px">Obra: <strong id="pag-cli-obra-nome"></strong></div>
+    <div class="mb"><label>Valor pago (R$)</label><input type="text" id="pag-cli-valor" placeholder="0,00" oninput="fmtValCliente(this)"></div>
+    <div class="mb"><label>Forma de pagamento</label>
+      <select id="pag-cli-forma">
+        <option value="pix">PIX</option>
+        <option value="transferencia">Transferência bancária</option>
+        <option value="dinheiro">Dinheiro</option>
+        <option value="cheque">Cheque</option>
+        <option value="outro">Outro</option>
+      </select>
+    </div>
+    <div class="mb"><label>Observação (opcional)</label><input type="text" id="pag-cli-obs" placeholder="Ex: Parcela 1 de 2..."></div>
+    <div class="mb"><label>Comprovante (opcional)</label>
+      <div class="photo-box">
+        <input type="file" accept="image/*" onchange="pagClieFotoChanged(this)">
+        <img class="photo-preview" id="pag-cli-prev-comprovante">
+        <div id="pag-cli-icon-comprovante"><i class="ti ti-receipt"></i><span>Foto do comprovante</span></div>
+      </div>
+    </div>
+    <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px;padding:10px;background:var(--surface-1);border-radius:8px">
+      <i class="ti ti-info-circle"></i> O administrador precisará confirmar o recebimento. O saldo será atualizado após a confirmação.
+    </div>
+    <button class="btn-brand" id="btn-salvar-pag-cliente" onclick="salvarPagamentoCliente()">Registrar pagamento</button>
+  </div>
+</div>
+
+</div><!-- /app -->
+<div class="toast" id="toast"></div>
+<script type="module" src="app.js"></script>
+</body>
+</html>
