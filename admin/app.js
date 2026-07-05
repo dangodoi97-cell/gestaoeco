@@ -244,7 +244,7 @@ async function renderFechamentoCaixa() {
 
   const valorEtapas = etapasConcluidas.reduce((s, e) => s + parseBRL(e.val), 0);
   const valorDiarias = diariasPeriodo.reduce((s, e) => s + parseBRL(e.val), 0);
-  const valorReceber = valorEtapas + valorDiarias;
+  const valorGanhos = valorEtapas + valorDiarias;
 
   const parceirosResumo = {};
   etapasPeriodo.forEach(e => {
@@ -268,30 +268,67 @@ async function renderFechamentoCaixa() {
   const encargosPeriodo = db_encargos.filter(e => estaNoPeriodo(e.criadoEm, inicio, fim));
   const valorEncargos = encargosPeriodo.reduce((s, e) => s + parseBRL(e.valor), 0);
   const valorExtrasConfirmados = fechamentoDespesasConfirmadas.reduce((s, e) => s + parseBRL(e.valor), 0);
-  const lucro = valorReceber - valorRepasse - valorEncargos - valorExtrasConfirmados;
+  const valorDespesas = valorRepasse + valorExtrasConfirmados;
+  const lucro = valorGanhos - valorDespesas;
+  const valorReceberCliente = valorGanhos + valorEncargos;
   const fechamentoExistente = db_fechamentos.find(f => f.periodoInicio === inicio && f.periodoFim === fim);
 
+  const renderLinhaResumo = (label, valor, isSubtotal = false) => `
+    <div class="fechamento-row${isSubtotal ? ' subtotal' : ''}">
+      <span class="fechamento-row-label${isSubtotal ? ' strong' : ''}">${label}</span>
+      <span class="fechamento-row-value${isSubtotal ? ' strong' : ''}">${fmtBRL(valor)}</span>
+    </div>`;
+
   resumoEl.innerHTML = `
-    <div class="card">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-        <span style="font-size:15px;font-weight:700">Resumo do período</span>
-        <button class="btn-sm btn-success" onclick="salvarFechamentoCaixa('${inicio}','${fim}',${valorReceber},${valorRepasse},${valorEncargos},${valorDiarias},${valorEtapas},${valorExtrasConfirmados},${lucro})"><i class="ti ti-device-floppy"></i> Salvar fechamento</button>
+    <div class="card fechamento-card">
+      <div class="fechamento-header">
+        <div>
+          <div class="fechamento-title">Resumo do período</div>
+          <div class="fechamento-periodo">${inicio || '—'}${fim ? ` até ${fim}` : ''}</div>
+        </div>
+        <button class="btn-sm btn-success" onclick="salvarFechamentoCaixa('${inicio}','${fim}',${valorReceberCliente},${valorRepasse},${valorEncargos},${valorDiarias},${valorEtapas},${valorExtrasConfirmados},${lucro})"><i class="ti ti-device-floppy"></i> Salvar fechamento</button>
       </div>
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-        <span style="font-size:12px;color:var(--text-muted)">${inicio || '—'} ${fim ? `até ${fim}` : ''}</span>
+
+      <div class="fechamento-summary-stack">
+        <div class="fechamento-section success">
+          <div class="fechamento-section-header success">Ganhos</div>
+          <div class="fechamento-table">
+            ${renderLinhaResumo('Etapas concluídas', valorEtapas)}
+            ${renderLinhaResumo('Diárias', valorDiarias)}
+            ${renderLinhaResumo('Subtotal de ganhos', valorGanhos, true)}
+          </div>
+        </div>
+
+        <div class="fechamento-section danger">
+          <div class="fechamento-section-header danger">Despesas</div>
+          <div class="fechamento-table">
+            ${renderLinhaResumo('Repasses', valorRepasse)}
+            ${renderLinhaResumo('Despesas extras confirmadas', valorExtrasConfirmados)}
+            ${renderLinhaResumo('Subtotal de despesas', valorDespesas, true)}
+          </div>
+        </div>
+
+        <div class="fechamento-section neutral">
+          <div class="fechamento-section-header neutral">Encargos</div>
+          <div class="fechamento-amount-only">${fmtBRL(valorEncargos)}</div>
+        </div>
+
+        <div class="fechamento-kpi">
+          <div class="fechamento-kpi-label">Valor total a receber do cliente</div>
+          <div class="fechamento-kpi-value">${fmtBRL(valorReceberCliente)}</div>
+        </div>
+
+        <div class="fechamento-kpi profit ${lucro >= 0 ? 'positive' : 'negative'}">
+          <div class="fechamento-kpi-label">Lucro geral</div>
+          <div class="fechamento-kpi-value">${fmtBRL(lucro)}</div>
+        </div>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-        <div class="stat"><span class="stat-val" style="font-size:14px">${fmtBRL(valorReceber)}</span><span class="stat-lbl">Valor total a receber</span></div>
-        <div class="stat"><span class="stat-val" style="font-size:14px">${fmtBRL(valorRepasse)}</span><span class="stat-lbl">Valor total de repasses</span></div>
-        <div class="stat"><span class="stat-val" style="font-size:14px">${fmtBRL(valorEncargos)}</span><span class="stat-lbl">Valor total de encargos</span></div>
-        <div class="stat"><span class="stat-val" style="font-size:14px">${fmtBRL(valorDiarias)}</span><span class="stat-lbl">Valor total de diárias</span></div>
-        <div class="stat"><span class="stat-val" style="font-size:14px">${fmtBRL(valorEtapas)}</span><span class="stat-lbl">Valor total de etapas concluídas</span></div>
-        <div class="stat"><span class="stat-val" style="font-size:14px">${fmtBRL(valorExtrasConfirmados)}</span><span class="stat-lbl">Despesas extras confirmadas</span></div>
-        <div class="stat" style="grid-column:1 / -1"><span class="stat-val" style="font-size:16px;color:var(--text-success)">${fmtBRL(lucro)}</span><span class="stat-lbl">Valor total de lucro</span></div>
-      </div>
+
       <div class="divider"></div>
-      <div style="font-size:13px;font-weight:600;margin-bottom:8px">Parceiros e saldo devedor</div>
-      ${Object.values(parceirosResumo).length ? Object.values(parceirosResumo).map(p => `<div class="row-item"><div class="row-info"><div class="row-title">${p.nome}</div></div><div style="font-size:13px;font-weight:600;color:var(--text-danger)">${fmtBRL(p.valor)}</div></div>`).join('') : `<div class="empty"><i class="ti ti-users-off"></i><p>Nenhum repasse para parceiros neste período.</p></div>`}
+      <div style="font-size:13px;font-weight:600;margin-bottom:8px;padding:0 14px">Parceiros e saldo devedor</div>
+      <div style="padding:0 14px 14px">
+        ${Object.values(parceirosResumo).length ? Object.values(parceirosResumo).map(p => `<div class="row-item"><div class="row-info"><div class="row-title">${p.nome}</div></div><div style="font-size:13px;font-weight:600;color:var(--text-danger)">${fmtBRL(p.valor)}</div></div>`).join('') : `<div class="empty"><i class="ti ti-users-off"></i><p>Nenhum repasse para parceiros neste período.</p></div>`}
+      </div>
     </div>`;
 
   itensEl.innerHTML = etapasPeriodo.length ? etapasPeriodo.map(e => `
