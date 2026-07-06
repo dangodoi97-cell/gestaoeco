@@ -8,12 +8,13 @@ import {
   criarSolicitacao, atualizarSolicitacao, escutarSolicitacoes,
   registrarPagamentoCliente, escutarPagamentosCliente,
   escutarSolicitacoesPagamento, atualizarSolicitacaoPagamento,
-  escutarNotificacoes, marcarNotificacaoLida,
+  escutarNotificacoes, marcarNotificacaoLida, criarNotificacao,
   escutarOrcamentos, decidirOrcamento,
   enviarAvaliacao,
   uploadFoto, fileParaBase64,
   hoje, diasDiff
 } from '../js/data.js';
+import { permissaoNotificacao, ativarNotificacoes, removerTokenAtual, onForegroundMessage, handleNotificationOpen } from '../js/notifications.js';
 
 let usuarioAtual = null;
 
@@ -26,9 +27,44 @@ observarAuth(async (user, perfil) => {
   document.getElementById('app').style.display = 'block';
   document.getElementById('topbar-sub').textContent = `Olá, ${perfil.nome || 'Cliente'}`;
   iniciarApp();
+  iniciarNotificacoes();
 });
 
-window.sairConta = async () => { await logout(); window.location.href = '../index.html'; };
+window.sairConta = async () => {
+  if (usuarioAtual) await removerTokenAtual(usuarioAtual.uid);
+  await logout();
+  window.location.href = '../index.html';
+};
+
+// ---------- NOTIFICAÇÕES PUSH ----------
+const gotoFnsCliente = {
+  obras: (id) => { window.goPage('obras'); if (id) window.abrirObra(id); },
+  financeiro: (id) => { window.goPage('financeiro'); if (id) window.abrirCobranca(id); }
+};
+
+function iniciarNotificacoes() {
+  const estado = permissaoNotificacao();
+  if (estado === 'granted') {
+    ativarNotificacoes(usuarioAtual.uid);
+  } else if (estado === 'default') {
+    const banner = document.getElementById('banner-notificacoes');
+    if (banner) banner.style.display = 'flex';
+  }
+  onForegroundMessage(data => handleNotificationOpen(data, gotoFnsCliente));
+
+  const params = new URLSearchParams(location.search);
+  if (params.has('linkPagina')) {
+    handleNotificationOpen({ linkPagina: params.get('linkPagina'), linkId: params.get('linkId') }, gotoFnsCliente);
+    history.replaceState(null, '', location.pathname);
+  }
+}
+
+window.ativarNotificacoesCliente = async function() {
+  const ok = await ativarNotificacoes(usuarioAtual.uid);
+  const banner = document.getElementById('banner-notificacoes');
+  if (banner) banner.style.display = 'none';
+  toast(ok ? 'Notificações ativadas!' : 'Não foi possível ativar as notificações.');
+};
 
 // ---------- ESTADO ----------
 let db_obras = [], db_precos = [], db_solicitacoes = [], db_pagamentosCliente = [], db_cobrancas = [], db_notificacoes = [], db_orcamentos = [];
@@ -79,7 +115,7 @@ function iniciarApp() {
     db_notificacoes = n;
     renderAprovacao();
     updateBadge();
-  }, usuarioAtual.uid);
+  }, { destinatarioTipo: 'cliente', clienteId: usuarioAtual.uid });
   escutarOrcamentos(o => {
     db_orcamentos = o;
     renderAprovacao();
@@ -386,7 +422,12 @@ window.salvarSolicitacao = async function() {
       await atualizarSolicitacao(editandoSolId, { tipo, local, desc, fotos: fotosFinais });
       toast('Solicitação atualizada');
     } else {
-      await criarSolicitacao({ tipo, local, desc, fotos: fotosUrls, clienteId: usuarioAtual.uid, clienteNome: usuarioAtual.nome || '' });
+      const solId = await criarSolicitacao({ tipo, local, desc, fotos: fotosUrls, clienteId: usuarioAtual.uid, clienteNome: usuarioAtual.nome || '' });
+      criarNotificacao({
+        destinatarioTipo: 'admin', tipo: 'solicitacao_criada', titulo: `Nova solicitação de ${usuarioAtual.nome || 'cliente'}`,
+        mensagem: `${usuarioAtual.nome || 'Um cliente'} enviou uma nova solicitação de serviço.`,
+        linkPagina: 'solicitacoes', linkId: solId, lida: false
+      });
       toast('Solicitação enviada! Aguarde o contato.');
     }
     document.getElementById('modal-nova-solicitacao').classList.remove('show');
@@ -423,6 +464,11 @@ window.mostrarMotivoRejeicao = function() {
 window.aprovarOrcamentoAtivo = async function() {
   if (!orcamentoAtivo) return;
   await decidirOrcamento(orcamentoAtivo.id, 'aprovado');
+  criarNotificacao({
+    destinatarioTipo: 'admin', tipo: 'orcamento_decidido', titulo: 'Orçamento aprovado',
+    mensagem: `${usuarioAtual.nome || 'O cliente'} aprovou o orçamento de R$ ${orcamentoAtivo.valor}.`,
+    linkPagina: 'aprovacao', linkId: orcamentoAtivo.obraId, lida: false
+  });
   document.getElementById('modal-orcamento').classList.remove('show');
   toast('Orçamento aprovado! A obra foi liberada.');
 };
@@ -432,6 +478,11 @@ window.rejeitarOrcamentoAtivo = async function() {
   const motivo = document.getElementById('orcamento-motivo').value.trim();
   if (!motivo) { toast('Descreva o motivo da rejeição'); return; }
   await decidirOrcamento(orcamentoAtivo.id, 'rejeitado', motivo);
+  criarNotificacao({
+    destinatarioTipo: 'admin', tipo: 'orcamento_decidido', titulo: 'Orçamento rejeitado',
+    mensagem: `${usuarioAtual.nome || 'O cliente'} rejeitou o orçamento de R$ ${orcamentoAtivo.valor}.`,
+    linkPagina: 'aprovacao', linkId: orcamentoAtivo.obraId, lida: false
+  });
   document.getElementById('modal-orcamento').classList.remove('show');
   toast('Orçamento rejeitado. O administrador foi avisado.');
 };
@@ -452,6 +503,12 @@ window.enviarAvaliacaoObra = async function() {
   if (!avaliacaoNotaAtual) { toast('Selecione uma nota de 1 a 5 estrelas'); return; }
   const comentario = document.getElementById('avaliacao-comentario').value.trim();
   await enviarAvaliacao(avaliacaoObraId, avaliacaoNotaAtual, comentario);
+  const obra = db_obras.find(o => o.id === avaliacaoObraId);
+  criarNotificacao({
+    destinatarioTipo: 'admin', tipo: 'avaliacao_registrada', titulo: `Nova avaliação de ${usuarioAtual.nome || 'cliente'}`,
+    mensagem: `${usuarioAtual.nome || 'Um cliente'} avaliou a obra "${obra?.nome || ''}" com ${avaliacaoNotaAtual} estrela${avaliacaoNotaAtual>1?'s':''}.`,
+    linkPagina: 'obras', linkId: avaliacaoObraId, lida: false
+  });
   document.getElementById('modal-avaliacao').classList.remove('show');
   toast('Avaliação enviada! Obrigado.');
 };
@@ -614,13 +671,18 @@ window.salvarPagamentoCliente = async function() {
   try {
     let comprovanteUrl = null;
     if (pagFotoCliente) comprovanteUrl = await uploadFoto(pagFotoCliente, `pagamentos_cliente/${usuarioAtual.uid}/${Date.now()}.jpg`);
-    await registrarPagamentoCliente({
+    const pagId = await registrarPagamentoCliente({
       obraId: pagObraId,
       clienteId: usuarioAtual.uid,
       clienteNome: usuarioAtual.nome || '',
       valor, formaPagamento: forma, obs,
       comprovante: comprovanteUrl,
       data: hoje()
+    });
+    criarNotificacao({
+      destinatarioTipo: 'admin', tipo: 'pagamento_cliente_registrado', titulo: `Pagamento registrado por ${usuarioAtual.nome || 'cliente'}`,
+      mensagem: `${usuarioAtual.nome || 'Um cliente'} registrou um pagamento de R$ ${valor}.`,
+      linkPagina: 'pagamentos-cli', linkId: pagId, lida: false
     });
     document.getElementById('modal-pagamento-cliente').classList.remove('show');
     toast('Pagamento registrado! Aguardando confirmação do administrador.');
@@ -743,7 +805,9 @@ function renderAprovacao() {
 
 window.marcarNotifLida = function(id) {
   const n = db_notificacoes.find(x => x.id === id);
-  if (n && !n.lida) marcarNotificacaoLida(id);
+  if (!n) return;
+  if (!n.lida) marcarNotificacaoLida(id);
+  handleNotificationOpen({ linkPagina: n.linkPagina, linkId: n.linkId }, gotoFnsCliente);
 };
 
 window.abrirCobranca = function(cobId) {
@@ -794,6 +858,11 @@ window.confirmarPagamentoCob = async function() {
     await atualizarSolicitacaoPagamento(cobAtiva.id, {
       status: 'paga', formaPagamento: forma, comprovante: comprovanteUrl, dataPagamento: hoje()
     });
+    criarNotificacao({
+      destinatarioTipo: 'admin', tipo: 'cobranca_respondida', titulo: 'Cobrança paga',
+      mensagem: `${usuarioAtual.nome || 'O cliente'} pagou a cobrança de R$ ${cobAtiva.total}.`,
+      linkPagina: 'aprovacao', linkId: cobAtiva.id, lida: false
+    });
     document.getElementById('modal-cobranca').classList.remove('show');
     toast('Pagamento confirmado! O administrador será notificado.');
   } catch(e) { toast('Erro ao confirmar'); console.error(e); }
@@ -808,6 +877,11 @@ window.contestarCobranca = async function() {
   btn.disabled = true; btn.textContent = 'Enviando...';
   try {
     await atualizarSolicitacaoPagamento(cobAtiva.id, { status: 'contestada', contestacao: motivo });
+    criarNotificacao({
+      destinatarioTipo: 'admin', tipo: 'cobranca_respondida', titulo: 'Cobrança contestada',
+      mensagem: `${usuarioAtual.nome || 'O cliente'} contestou a cobrança de R$ ${cobAtiva.total}: "${motivo}"`,
+      linkPagina: 'aprovacao', linkId: cobAtiva.id, lida: false
+    });
     document.getElementById('modal-cobranca').classList.remove('show');
     toast('Contestação enviada ao administrador.');
   } catch(e) { toast('Erro ao enviar'); console.error(e); }

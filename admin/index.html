@@ -7,7 +7,8 @@
 <meta name="apple-mobile-web-app-title" content="Obras Admin">
 <meta name="theme-color" content="#ffffff">
 <title>Painel Administrativo</title>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.47.0/tabler-icons.min.css">
+<link rel="manifest" href="../manifest.json">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.47.0/tabler-icons.min.css" integrity="sha384-PwEnNZvp50/uDLtKrd1s2D4Xe/y+fCVtEigigjik/PgHlDXUF1uJ32m7guk/XWYV" crossorigin="anonymous">
 <link rel="stylesheet" href="../css/style.css">
 <style>
   .client-card{background:var(--surface-2);border:0.5px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:8px;display:flex;align-items:center;gap:10px}
@@ -35,12 +36,37 @@
   </div>
 </div>
 
+<div id="banner-notificacoes" class="alert-box" style="display:none;margin:10px 14px 0;justify-content:space-between;align-items:center;gap:10px">
+  <span style="font-size:12px"><i class="ti ti-bell"></i> Ative as notificações para saber quando um cliente enviar uma solicitação ou pagamento.</span>
+  <button class="btn-sm" data-testid="ativar-notificacoes-button" onclick="ativarNotificacoesAdmin()" style="flex-shrink:0">Ativar</button>
+</div>
+
 <!-- OBRAS -->
 <div id="page-obras" class="page active">
   <div class="stat-row">
     <div class="stat"><span class="stat-val" id="s-total">0</span><span class="stat-lbl">Total</span></div>
     <div class="stat"><span class="stat-val" id="s-and">0</span><span class="stat-lbl">Em andamento</span></div>
     <div class="stat"><span class="stat-val" id="s-conc">0</span><span class="stat-lbl">Concluídas</span></div>
+  </div>
+  <div class="mb">
+    <label for="fechamento-cliente-select">Fechamento de caixa por cliente</label>
+    <select id="fechamento-cliente-select" data-testid="fechamento-cliente-select" onchange="filtrarObrasPorCliente(this.value)">
+      <option value="">(Todos)</option>
+    </select>
+  </div>
+  <div id="fechamento-resumo" class="g3 mb" style="display:none">
+    <div class="stat stat-entrada">
+      <span class="stat-val" id="fechamento-resumo-entrada" data-testid="fechamento-resumo-entrada">R$ 0,00</span>
+      <span class="stat-lbl">Entrada</span>
+    </div>
+    <div class="stat stat-repasse">
+      <span class="stat-val" id="fechamento-resumo-repasse" data-testid="fechamento-resumo-repasse">R$ 0,00</span>
+      <span class="stat-lbl">Repasse</span>
+    </div>
+    <div class="stat stat-sobra">
+      <span class="stat-val" id="fechamento-resumo-sobra" data-testid="fechamento-resumo-sobra">R$ 0,00</span>
+      <span class="stat-lbl">Sobra</span>
+    </div>
   </div>
   <div class="sec-title">Obras <button class="btn-sm" onclick="abrirModalNovaObra()"><i class="ti ti-plus"></i> Nova obra</button></div>
   <div id="lista-obras"></div>
@@ -101,6 +127,16 @@
       <span style="font-size:13px;font-weight:700;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.5px">Orçamentos aguardando decisão do cliente</span>
     </div>
     <div id="lista-aprovacao"></div>
+  </div>
+
+  <!-- Atividade dos clientes (notificações admin-facing, Unidade 2) -->
+  <div id="secao-notificacoes-admin" style="display:none">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;margin-top:4px">
+      <i class="ti ti-bell" style="font-size:16px;color:#8b5cf6"></i>
+      <span style="font-size:13px;font-weight:700;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.5px">Atividade dos clientes</span>
+      <span id="badge-notificacoes-admin" style="background:#e24b4a;color:#fff;border-radius:10px;padding:1px 8px;font-size:11px;font-weight:600"></span>
+    </div>
+    <div id="lista-notificacoes-admin" data-testid="lista-notificacoes-admin"></div>
   </div>
 </div>
 

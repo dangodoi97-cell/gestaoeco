@@ -108,6 +108,12 @@ textarea { resize: vertical; }
 .badge-rej { background: var(--bg-danger); color: var(--text-danger); }
 .badge-pago { background: var(--bg-success); color: var(--text-success); }
 .badge-apagar { background: var(--bg-danger); color: var(--text-danger); }
+.stat-entrada { background: var(--bg-accent); }
+.stat-entrada .stat-val { color: var(--text-accent); }
+.stat-repasse { background: var(--bg-danger); }
+.stat-repasse .stat-val { color: var(--text-danger); }
+.stat-sobra { background: var(--bg-success); }
+.stat-sobra .stat-val { color: var(--text-success); }
 .progress-bar { height: 6px; background: var(--surface-1); border-radius: 3px; overflow: hidden; margin: 8px 0 4px; }
 .progress-fill { height: 100%; background: #1D9E75; border-radius: 3px; transition: width .3s; }
 .list-card { background: var(--surface-2); border: 0.5px solid var(--border); border-radius: 12px; padding: 14px 16px; margin-bottom: 10px; cursor: pointer; }

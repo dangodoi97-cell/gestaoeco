@@ -18,10 +18,12 @@ import {
   escutarPagamentosCliente, atualizarPagamentoCliente,
   criarSolicitacaoPagamento, escutarSolicitacoesPagamento, atualizarSolicitacaoPagamento,
   notificarWhatsApp,
-  criarNotificacao, enviarOrcamento, escutarOrcamentos,
+  criarNotificacao, escutarNotificacoes, marcarNotificacaoLida, enviarOrcamento, escutarOrcamentos,
   uploadFoto, fileParaBase64,
   hoje, diasDiff
 } from '../js/data.js';
+import { filtrarObras, calcularResumoFechamento } from '../js/fechamento.js';
+import { permissaoNotificacao, ativarNotificacoes, removerTokenAtual, onForegroundMessage, handleNotificationOpen } from '../js/notifications.js';
 
 // ---------- AUTH ----------
 let usuarioAtual = null;
@@ -31,16 +33,62 @@ observarAuth(async (user, perfil) => {
   document.getElementById('loading').style.display = 'none';
   document.getElementById('app').style.display = 'block';
   iniciarApp();
+  iniciarNotificacoes();
 });
-window.sairConta = async () => { await logout(); window.location.href = '../index.html'; };
+window.sairConta = async () => {
+  if (usuarioAtual) await removerTokenAtual(usuarioAtual.uid);
+  await logout();
+  window.location.href = '../index.html';
+};
+
+// ---------- NOTIFICAÇÕES PUSH ----------
+const gotoFnsAdmin = {
+  obras: (id) => { window.goPage('obras'); if (id) window.abrirObra(id); },
+  solicitacoes: () => window.goPage('aprovacao'),
+  aprovacao: () => window.goPage('aprovacao'),
+  'pagamentos-cli': () => window.goPage('aprovacao')
+};
+
+function iniciarNotificacoes() {
+  const estado = permissaoNotificacao();
+  if (estado === 'granted') {
+    ativarNotificacoes(usuarioAtual.uid);
+  } else if (estado === 'default') {
+    const banner = document.getElementById('banner-notificacoes');
+    if (banner) banner.style.display = 'flex';
+  }
+  onForegroundMessage(data => handleNotificationOpen(data, gotoFnsAdmin));
+
+  // Deep-link: se o usuário chegou aqui pelo clique numa notificação push (app estava fechado)
+  const params = new URLSearchParams(location.search);
+  if (params.has('linkPagina')) {
+    handleNotificationOpen({ linkPagina: params.get('linkPagina'), linkId: params.get('linkId') }, gotoFnsAdmin);
+    history.replaceState(null, '', location.pathname);
+  }
+}
+
+window.ativarNotificacoesAdmin = async function() {
+  const ok = await ativarNotificacoes(usuarioAtual.uid);
+  const banner = document.getElementById('banner-notificacoes');
+  if (banner) banner.style.display = 'none';
+  toast(ok ? 'Notificações ativadas!' : 'Não foi possível ativar as notificações.');
+};
+
+window.abrirNotificacaoAdmin = function(id) {
+  const n = db_notificacoesAdmin.find(x => x.id === id);
+  if (!n) return;
+  if (!n.lida) marcarNotificacaoLida(id);
+  handleNotificationOpen({ linkPagina: n.linkPagina, linkId: n.linkId }, gotoFnsAdmin);
+};
 
 // ---------- ESTADO ----------
-let db_obras = [], db_precos = [], db_repasses = [], db_parceiros = [], db_clientes = [], db_admins = [], db_solicitacoes = [], db_diarias = [], db_pagamentosAdmin = [], db_solicitacoesPagamento = [], db_orcamentos = [];
+let db_obras = [], db_precos = [], db_repasses = [], db_parceiros = [], db_clientes = [], db_admins = [], db_solicitacoes = [], db_diarias = [], db_pagamentosAdmin = [], db_solicitacoesPagamento = [], db_orcamentos = [], db_notificacoesAdmin = [];
 let obraAtiva = null, etapaConclId = null, etapaFotoExtraId = null;
 let editPrecoId = null, editRepasseId = null, editParceiroId = null, editDiariaId = null;
 let parceiroDetalheId = null, solicitacaoAceitarId = null;
 let etFotos = {}, concFoto = null, encFoto = null, extraFoto = null, pagFoto = null;
 let unsubEtapasAtivas = null, unsubTodasEtapas = null, unsubEncargos = null, unsubPagamentos = null;
+let fechamentoClienteSelecionado = '';
 
 function iniciarApp() {
   escutarObras(obras => {
@@ -52,13 +100,13 @@ function iniciarApp() {
     if (unsubTodasEtapas) unsubTodasEtapas();
     unsubTodasEtapas = escutarTodasEtapas(obras, todas => {
       window._todasEtapas = todas;
-      renderExecucao(); renderAprovacao(); updateBadge();
+      renderExecucao(); renderAprovacao(); updateBadge(); renderFechamentoResumo();
     });
   });
   escutarPrecos(p => { db_precos = p; renderPrecos(); });
   escutarRepasses(r => { db_repasses = r; renderRepasse(); });
   escutarParceiros(p => { db_parceiros = p; renderParceiros(); if (parceiroDetalheId) renderParceiroDetalhe(); });
-  escutarClientes(c => { db_clientes = c; renderClientes(); popularSelectClientes(); });
+  escutarClientes(c => { db_clientes = c; renderClientes(); popularSelectClientes(); popularFiltroFechamento(); });
   escutarAdmins(a => { db_admins = a; renderAdmins(); });
   escutarSolicitacoes(s => { db_solicitacoes = s; renderSolicitacoes(); updateBadgeSolicitacoes(); });
   escutarDiarias(d => { db_diarias = d; renderDiarias(); });
@@ -70,6 +118,11 @@ function iniciarApp() {
     updateBadge();
     if (document.getElementById('page-obra-detalhe').classList.contains('active') && obraAtiva) renderDetalheObra();
   });
+  escutarNotificacoes(n => {
+    db_notificacoesAdmin = n;
+    renderNotificacoesAdmin();
+    updateBadge();
+  }, { destinatarioTipo: 'admin' });
 }
 
 // ---------- HELPERS ----------
@@ -142,6 +195,38 @@ function popularSelectClientes() {
   sel.value = atual;
 }
 
+// ---------- FECHAMENTO DE CAIXA (filtro por cliente na aba Obras) ----------
+function usuariosClientesById() {
+  const map = {};
+  db_clientes.forEach(c => { map[c.id] = c; });
+  return map;
+}
+
+function popularFiltroFechamento() {
+  const sel = document.getElementById('fechamento-cliente-select'); if (!sel) return;
+  const atual = sel.value;
+  sel.innerHTML = `<option value="">(Todos)</option>`;
+  db_clientes.filter(c => c.status === 'aprovado').forEach(c => { const o = document.createElement('option'); o.value = c.id; o.textContent = c.nome; sel.appendChild(o); });
+  const outros = document.createElement('option'); outros.value = '__outros__'; outros.textContent = 'Sem cliente / Outros';
+  sel.appendChild(outros);
+  sel.value = atual;
+}
+
+window.filtrarObrasPorCliente = function(clienteId) {
+  fechamentoClienteSelecionado = clienteId || '';
+  renderObras();
+};
+
+function renderFechamentoResumo() {
+  const wrap = document.getElementById('fechamento-resumo'); if (!wrap) return;
+  if (!fechamentoClienteSelecionado) { wrap.style.display = 'none'; return; }
+  const resumo = calcularResumoFechamento(db_obras, window._todasEtapas || [], usuariosClientesById(), fechamentoClienteSelecionado);
+  wrap.style.display = 'grid';
+  document.getElementById('fechamento-resumo-entrada').textContent = fmtBRL(resumo.totalEntrada);
+  document.getElementById('fechamento-resumo-repasse').textContent = fmtBRL(resumo.totalRepasse);
+  document.getElementById('fechamento-resumo-sobra').textContent = fmtBRL(resumo.totalSobra);
+}
+
 // Sobrescreve o onclick do botão nova obra para popular o select antes de abrir
 document.addEventListener('DOMContentLoaded', () => {
   const btnNovaObra = document.querySelector('[onclick="showModal(\'modal-nova-obra\')"]');
@@ -175,7 +260,8 @@ function updateBadge() {
   const nPagamentos = db_pagamentosAdmin.filter(p => p.status === 'pendente').length;
   const nSolicitacoes = db_solicitacoes.filter(s => s.status === 'pendente').length;
   const nContestacoes = db_solicitacoesPagamento.filter(s => s.status === 'contestada').length;
-  const total = nOrcamentos + nPagamentos + nSolicitacoes + nContestacoes;
+  const nNotificacoes = db_notificacoesAdmin.filter(n => !n.lida).length;
+  const total = nOrcamentos + nPagamentos + nSolicitacoes + nContestacoes + nNotificacoes;
   const dot = document.getElementById('dot-aprov');
   if (dot) dot.classList.toggle('show', total > 0);
 }
@@ -198,9 +284,10 @@ function renderObras() {
   document.getElementById('s-total').textContent = db_obras.length;
   document.getElementById('s-and').textContent = and;
   document.getElementById('s-conc').textContent = conc;
+  const obrasExibidas = filtrarObras(db_obras, fechamentoClienteSelecionado, usuariosClientesById());
   const el = document.getElementById('lista-obras');
-  if (!db_obras.length) { el.innerHTML = `<div class="empty"><i class="ti ti-building-off"></i><p>Nenhuma obra cadastrada.</p></div>`; return; }
-  el.innerHTML = db_obras.map(o => {
+  if (!obrasExibidas.length) { el.innerHTML = `<div class="empty"><i class="ti ti-building-off"></i><p>Nenhuma obra ${fechamentoClienteSelecionado ? 'em execução para este filtro' : 'cadastrada'}.</p></div>`; renderFechamentoResumo(); return; }
+  el.innerHTML = obrasExibidas.map(o => {
     const cliente = db_clientes.find(c => c.id === o.clienteId);
     const atrasada = o.status === 'andamento' && o.fim && o.fim < hoje();
     const pgBadge = o.pagObra ? `<span class="badge ${o.pagObra === 'pago' ? 'badge-aprov' : o.pagObra === 'parcial' ? 'badge-exec' : 'badge-pend'}" style="font-size:10px">${o.pagObra === 'pago' ? 'Pago' : o.pagObra === 'parcial' ? 'Parcial' : 'A pagar'}</span>` : '';
@@ -219,6 +306,7 @@ function renderObras() {
       ${atrasada ? `<div class="alert-box alert-danger"><i class="ti ti-alert-triangle"></i>Prazo vencido</div>` : ''}
     </div>`;
   }).join('');
+  renderFechamentoResumo();
 }
 
 window.salvarObra = async function() {
@@ -240,9 +328,10 @@ window.salvarObra = async function() {
   const novaObraId = await criarObra(dados);
   if (clienteId) {
     criarNotificacao({
-      clienteId, obraId: novaObraId, obraNome: nome,
+      destinatarioTipo: 'cliente', clienteId, obraId: novaObraId, obraNome: nome,
       tipo: 'obra_criada', titulo: 'Obra iniciada',
-      mensagem: `A obra "${nome}" foi criada e está em preparação.`
+      mensagem: `A obra "${nome}" foi criada e está em preparação.`,
+      linkPagina: 'obras', linkId: novaObraId
     });
   }
   window.closeModal('modal-nova-obra');
@@ -372,9 +461,10 @@ window.concluirObra = async function(id) {
   const o = db_obras.find(x => x.id === id);
   if (o && o.clienteId) {
     criarNotificacao({
-      clienteId: o.clienteId, obraId: id, obraNome: o.nome,
+      destinatarioTipo: 'cliente', clienteId: o.clienteId, obraId: id, obraNome: o.nome,
       tipo: 'obra_concluida', titulo: 'Obra concluída',
-      mensagem: `A obra "${o.nome}" foi concluída. Deixe sua avaliação sobre o serviço.`
+      mensagem: `A obra "${o.nome}" foi concluída. Deixe sua avaliação sobre o serviço.`,
+      linkPagina: 'obras', linkId: id
     });
   }
   toast('Obra concluída');
@@ -709,9 +799,10 @@ window.salvarEtapa = async function() {
     });
     if (obraAtiva.clienteId) {
       criarNotificacao({
-        clienteId: obraAtiva.clienteId, obraId: obraAtiva.id, obraNome: obraAtiva.nome,
+        destinatarioTipo: 'cliente', clienteId: obraAtiva.clienteId, obraId: obraAtiva.id, obraNome: obraAtiva.nome,
         tipo: 'etapa_iniciada', titulo: 'Etapa em execução',
-        mensagem: `A etapa "${tipo}" começou a ser executada.`
+        mensagem: `A etapa "${tipo}" começou a ser executada.`,
+        linkPagina: 'obras', linkId: obraAtiva.id
       });
     }
     window.closeModal('modal-nova-etapa'); toast('Etapa adicionada');
@@ -772,9 +863,10 @@ window.concluirDiariaAntiga = async function(etId) {
   await atualizarEtapa(obraAtiva.id, etId, { status: 'concluido', pagamento: (etapa && etapa.pagamento) || 'a_pagar', dataConc: hoje() });
   if (obraAtiva.clienteId && etapa) {
     criarNotificacao({
-      clienteId: obraAtiva.clienteId, obraId: obraAtiva.id, obraNome: obraAtiva.nome,
+      destinatarioTipo: 'cliente', clienteId: obraAtiva.clienteId, obraId: obraAtiva.id, obraNome: obraAtiva.nome,
       tipo: 'etapa_concluida', titulo: 'Diária concluída',
-      mensagem: `A diária "${etapa.tipo}" foi concluída.`
+      mensagem: `A diária "${etapa.tipo}" foi concluída.`,
+      linkPagina: 'obras', linkId: obraAtiva.id
     });
   }
   toast('Diária concluída');
@@ -820,9 +912,10 @@ window.confirmarConclusao = async function() {
     await atualizarEtapa(obraAtiva.id, etapaConclId, { status: 'concluido', dataConc, obsConc: document.getElementById('conc-obs').value.trim(), fotoDepois: fotoDepoisUrl, pagamento: etapa.pagamento || 'a_pagar', tempoReal });
     if (obraAtiva.clienteId) {
       criarNotificacao({
-        clienteId: obraAtiva.clienteId, obraId: obraAtiva.id, obraNome: obraAtiva.nome,
+        destinatarioTipo: 'cliente', clienteId: obraAtiva.clienteId, obraId: obraAtiva.id, obraNome: obraAtiva.nome,
         tipo: 'etapa_concluida', titulo: 'Etapa concluída',
-        mensagem: `A etapa "${etapa.tipo}" foi concluída.`
+        mensagem: `A etapa "${etapa.tipo}" foi concluída.`,
+        linkPagina: 'obras', linkId: obraAtiva.id
       });
     }
     window.closeModal('modal-concluir'); toast('Etapa concluída');
@@ -861,8 +954,29 @@ function atualizarAprovacaoVazia() {
   const temPagamentos = db_pagamentosAdmin.length > 0;
   const temSolicitacoes = db_solicitacoes.length > 0;
   const temOrcamentos = db_orcamentos.some(o => o.status === 'pendente');
+  const temNotificacoes = db_notificacoesAdmin.length > 0;
   const vazia = document.getElementById('aprovacao-vazia');
-  if (vazia) vazia.style.display = (!temPagamentos && !temSolicitacoes && !temOrcamentos) ? 'block' : 'none';
+  if (vazia) vazia.style.display = (!temPagamentos && !temSolicitacoes && !temOrcamentos && !temNotificacoes) ? 'block' : 'none';
+}
+
+function renderNotificacoesAdmin() {
+  const el = document.getElementById('lista-notificacoes-admin');
+  const secao = document.getElementById('secao-notificacoes-admin');
+  if (!el || !secao) return;
+  secao.style.display = db_notificacoesAdmin.length ? 'block' : 'none';
+  const badge = document.getElementById('badge-notificacoes-admin');
+  const naoLidas = db_notificacoesAdmin.filter(n => !n.lida).length;
+  if (badge) badge.textContent = naoLidas > 0 ? naoLidas : '';
+  atualizarAprovacaoVazia();
+  el.innerHTML = db_notificacoesAdmin.map(n => `<div class="list-card" onclick="abrirNotificacaoAdmin('${n.id}')" style="${n.lida ? '' : 'border-color:#8b5cf6'}">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:14px;font-weight:600">${n.titulo}</div>
+        <div style="font-size:12px;color:var(--text-secondary);margin-top:2px">${n.mensagem}</div>
+      </div>
+      ${!n.lida ? `<span class="badge badge-exec" style="font-size:10px">Nova</span>` : ''}
+    </div>
+  </div>`).join('');
 }
 
 function renderAprovacao() {
@@ -1564,9 +1678,10 @@ window.salvarDiariaAvulsa = async function() {
       await criarEtapa(obraAtiva.id, dadosDiaria);
       if (obraAtiva.clienteId) {
         criarNotificacao({
-          clienteId: obraAtiva.clienteId, obraId: obraAtiva.id, obraNome: obraAtiva.nome,
+          destinatarioTipo: 'cliente', clienteId: obraAtiva.clienteId, obraId: obraAtiva.id, obraNome: obraAtiva.nome,
           tipo: 'diaria_registrada', titulo: 'Diária registrada',
-          mensagem: `Uma diária realizada em ${data} foi registrada.`
+          mensagem: `Uma diária realizada em ${data} foi registrada.`,
+          linkPagina: 'obras', linkId: obraAtiva.id
         });
       }
       toast('Diária registrada');
@@ -1740,13 +1855,19 @@ window.enviarCobranca = async function() {
     const obra = db_obras.find(o => o.id === obraId);
 
     // Cria a solicitação de pagamento
-    await criarSolicitacaoPagamento({
+    const solPagamentoId = await criarSolicitacaoPagamento({
       clienteId, clienteNome: cliente?.nome || '',
       obraId, obraNome: obra?.nome || '',
       etapas: etapasSelecionadas,
       total: total.toFixed(2).replace('.', ','),
       mensagem,
       pix: { tipo: pixTipo, chave: pixChave, nome: pixNome, banco: pixBanco }
+    });
+    criarNotificacao({
+      destinatarioTipo: 'cliente', clienteId, obraId, obraNome: obra?.nome || '',
+      tipo: 'cobranca_enviada', titulo: 'Nova cobrança recebida',
+      mensagem: `Uma cobrança de R$ ${total.toFixed(2).replace('.', ',')} foi enviada para pagamento.`,
+      linkPagina: 'financeiro', linkId: solPagamentoId
     });
 
     // Marca etapas como "solicitacao_pagamento"

@@ -6,11 +6,25 @@ service cloud.firestore {
     function meuPerfil() { return get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data; }
     function souAdmin() { return logado() && meuPerfil().tipo == 'admin'; }
     function souClienteAprovado() { return logado() && meuPerfil().tipo == 'cliente' && meuPerfil().status == 'aprovado'; }
+    // Fecha o achado #2 da engenharia reversa: só o cliente proprietário da obra (ou admin) le suas etapas.
+    function souProprietarioObra(obraId) {
+      return souClienteAprovado() &&
+        get(/databases/$(database)/documents/obras/$(obraId)).data.clienteId == request.auth.uid;
+    }
 
     match /usuarios/{uid} {
       allow read: if logado() && (request.auth.uid == uid || souAdmin());
-      allow create: if logado() && request.auth.uid == uid;
-      allow update: if souAdmin() || (logado() && request.auth.uid == uid);
+      // Fecha o achado #1: autocadastro só pode nascer como cliente pendente;
+      // qualquer outro formato (ex.: tipo:'admin', status:'aprovado') exige que quem escreve já seja admin
+      // (fluxo usado por cadastrarAdmin, que escreve o perfil do NOVO usuário a partir da sessão do admin original).
+      allow create: if logado() && (
+        (request.auth.uid == uid && request.resource.data.tipo == 'cliente' && request.resource.data.status == 'pendente') ||
+        souAdmin()
+      );
+      // Autoescrita só pode tocar campos seguros; trocar tipo/status exige ser admin.
+      allow update: if souAdmin() ||
+        (logado() && request.auth.uid == uid &&
+         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['nome', 'telefone', 'fcmTokens']));
       allow delete: if souAdmin();
     }
 
@@ -23,7 +37,7 @@ service cloud.firestore {
          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['avaliacaoNota', 'avaliacaoComentario', 'avaliadoEm']));
 
       match /etapas/{etapaId} {
-        allow read: if souAdmin() || souClienteAprovado();
+        allow read: if souAdmin() || souProprietarioObra(obraId);
         allow create, update, delete: if souAdmin();
       }
 
@@ -77,12 +91,22 @@ service cloud.firestore {
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'contestacao', 'comprovante', 'formaPagamento', 'dataPagamento']));
     }
 
-    // NOTIFICAÇÕES (feed informativo enviado pelo admin ao cliente)
+    // NOTIFICAÇÕES (feed bidirecional: admin->cliente e cliente->admin)
     match /notificacoes/{notifId} {
-      allow read: if souAdmin() || (souClienteAprovado() && resource.data.clienteId == request.auth.uid);
-      allow create, delete: if souAdmin();
-      // Cliente só pode marcar como lida
-      allow update: if souAdmin() || (souClienteAprovado() && resource.data.clienteId == request.auth.uid &&
+      allow read: if souAdmin() ||
+        (souClienteAprovado() && resource.data.destinatarioTipo == 'cliente' && resource.data.clienteId == request.auth.uid);
+      allow delete: if souAdmin();
+      // Admin cria notificações para o cliente (fluxo existente);
+      // cliente aprovado só pode criar notificações PARA o admin, com um tipo de uma lista fixa,
+      // nascendo não-lida e sem clienteId (formato exclusivo das notificações cliente->admin).
+      allow create: if souAdmin() ||
+        (souClienteAprovado() &&
+         request.resource.data.destinatarioTipo == 'admin' &&
+         request.resource.data.tipo in ['solicitacao_criada', 'orcamento_decidido', 'pagamento_cliente_registrado', 'cobranca_respondida', 'avaliacao_registrada'] &&
+         request.resource.data.lida == false &&
+         !('clienteId' in request.resource.data));
+      // Cliente só pode marcar como lida as suas próprias notificações cliente-facing
+      allow update: if souAdmin() || (souClienteAprovado() && resource.data.destinatarioTipo == 'cliente' && resource.data.clienteId == request.auth.uid &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lida']));
     }
 

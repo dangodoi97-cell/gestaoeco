@@ -3,6 +3,7 @@
 // ============================================
 import {
   auth, db,
+  firebaseConfig, initializeApp, deleteApp, getAuth,
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   signOut,
@@ -30,17 +31,33 @@ export async function cadastrarCliente(nome, email, senha, telefone) {
   return cred.user;
 }
 
-// Cria conta de ADMIN (usado pelo admin master para criar outros admins)
+// Cria conta de ADMIN (usado pelo admin já logado para criar outros admins).
+//
+// IMPORTANTE: createUserWithEmailAndPassword loga automaticamente como o usuário recém-criado
+// na instância de Auth em que é chamado. Se usássemos a instância principal (auth) aqui, a
+// sessão do admin que está chamando esta função seria substituída pela do novo admin — e a
+// escrita do perfil (tipo:'admin', status:'aprovado') sairia como uma AUTOESCRITA do novo
+// usuário, exatamente a forma que firestore.rules agora bloqueia (achado #1 da engenharia
+// reversa). Por isso o novo usuário é criado numa instância SECUNDÁRIA e descartável, e o
+// perfil é gravado a partir da sessão PRINCIPAL (o admin original, que nunca é deslogado).
 export async function cadastrarAdmin(nome, email, senha) {
-  const cred = await createUserWithEmailAndPassword(auth, email, senha);
-  await updateProfile(cred.user, { displayName: nome });
-  await setDoc(doc(db, 'usuarios', cred.user.uid), {
+  const secundario = initializeApp(firebaseConfig, `cadastro-admin-${Date.now()}`);
+  let novoUid;
+  try {
+    const authSecundario = getAuth(secundario);
+    const cred = await createUserWithEmailAndPassword(authSecundario, email, senha);
+    await updateProfile(cred.user, { displayName: nome });
+    novoUid = cred.user.uid;
+  } finally {
+    await deleteApp(secundario);
+  }
+  await setDoc(doc(db, 'usuarios', novoUid), {
     nome, email,
     tipo: 'admin',
     status: 'aprovado',
     criadoEm: new Date().toISOString()
   });
-  return cred.user;
+  return { uid: novoUid, email, displayName: nome };
 }
 
 export async function login(email, senha) {

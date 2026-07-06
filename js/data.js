@@ -5,6 +5,7 @@ import {
   db, storage, auth,
   collection, doc, setDoc, getDoc, getDocs, addDoc, updateDoc, deleteDoc,
   query, where, orderBy, onSnapshot, serverTimestamp,
+  arrayUnion, arrayRemove,
   ref, uploadString, getDownloadURL, deleteObject
 } from './firebase-config.js';
 
@@ -363,13 +364,12 @@ export async function criarNotificacao(dados) {
   return ref_.id;
 }
 
-export function escutarNotificacoes(callback, filtroClienteId = null) {
-  let q;
-  if (filtroClienteId) {
-    q = query(collection(db, 'notificacoes'), where('clienteId', '==', filtroClienteId), orderBy('criadoEm', 'desc'));
-  } else {
-    q = query(collection(db, 'notificacoes'), orderBy('criadoEm', 'desc'));
-  }
+// filtro: { destinatarioTipo: 'cliente', clienteId } ou { destinatarioTipo: 'admin' }
+export function escutarNotificacoes(callback, filtro) {
+  const { destinatarioTipo, clienteId } = filtro || {};
+  const q = destinatarioTipo === 'cliente'
+    ? query(collection(db, 'notificacoes'), where('destinatarioTipo', '==', 'cliente'), where('clienteId', '==', clienteId), orderBy('criadoEm', 'desc'))
+    : query(collection(db, 'notificacoes'), where('destinatarioTipo', '==', 'admin'), orderBy('criadoEm', 'desc'));
   return onSnapshot(q, snap => {
     callback(snap.docs.map(d => ({ id: d.id, ...d.data() })));
   });
@@ -377,6 +377,15 @@ export function escutarNotificacoes(callback, filtroClienteId = null) {
 
 export async function marcarNotificacaoLida(id) {
   await updateDoc(doc(db, 'notificacoes', id), { lida: true });
+}
+
+// ---------- TOKENS FCM (notificações push) ----------
+export async function salvarFcmToken(uid, token) {
+  await updateDoc(doc(db, 'usuarios', uid), { fcmTokens: arrayUnion(token) });
+}
+
+export async function removerFcmToken(uid, token) {
+  await updateDoc(doc(db, 'usuarios', uid), { fcmTokens: arrayRemove(token) });
 }
 
 // ---------- ORÇAMENTOS (único fluxo com aprovação do cliente) ----------
@@ -387,12 +396,15 @@ export async function enviarOrcamento(dados) {
     criadoEm: serverTimestamp()
   });
   await criarNotificacao({
+    destinatarioTipo: 'cliente',
     clienteId: dados.clienteId,
     obraId: dados.obraId,
     obraNome: dados.obraNome,
     tipo: 'orcamento_enviado',
     titulo: 'Novo orçamento recebido',
-    mensagem: `Um orçamento de R$ ${dados.valor} foi enviado para sua aprovação.`
+    mensagem: `Um orçamento de R$ ${dados.valor} foi enviado para sua aprovação.`,
+    linkPagina: 'obras',
+    linkId: dados.obraId
   });
   return ref_.id;
 }

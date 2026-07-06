@@ -7,7 +7,8 @@
 <meta name="apple-mobile-web-app-title" content="EcoSistema">
 <meta name="theme-color" content="#0f172a">
 <title>EcoSistema — Cliente</title>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.47.0/tabler-icons.min.css">
+<link rel="manifest" href="../manifest.json">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.47.0/tabler-icons.min.css" integrity="sha384-PwEnNZvp50/uDLtKrd1s2D4Xe/y+fCVtEigigjik/PgHlDXUF1uJ32m7guk/XWYV" crossorigin="anonymous">
 <link rel="stylesheet" href="../css/style.css">
 <style>
   :root { --brand: #1D9E75; --brand-dark: #157a5a; }
@@ -56,6 +57,11 @@
     <div class="sub" id="topbar-sub">Bem-vindo</div>
   </div>
   <button class="icon-btn" onclick="sairConta()"><i class="ti ti-logout"></i></button>
+</div>
+
+<div id="banner-notificacoes" class="alert-box" style="display:none;margin:10px 14px 0;justify-content:space-between;align-items:center;gap:10px">
+  <span style="font-size:12px"><i class="ti ti-bell"></i> Ative as notificações para saber quando sua obra tiver uma atualização.</span>
+  <button class="btn-sm" data-testid="ativar-notificacoes-button" onclick="ativarNotificacoesCliente()" style="flex-shrink:0">Ativar</button>
 </div>
 
 <!-- OBRAS -->
