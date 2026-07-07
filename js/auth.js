@@ -17,14 +17,14 @@ import {
   signInWithPopup
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
-// Cria conta de CLIENTE (auto-cadastro, fica pendente até admin aprovar)
+// Cria conta de CLIENTE (auto-cadastro aprovado diretamente)
 export async function cadastrarCliente(nome, email, senha, telefone) {
   const cred = await createUserWithEmailAndPassword(auth, email, senha);
   await updateProfile(cred.user, { displayName: nome });
   await setDoc(doc(db, 'usuarios', cred.user.uid), {
     nome, email, telefone: telefone || '',
     tipo: 'cliente',
-    status: 'pendente', // pendente | aprovado | rejeitado
+    status: 'aprovado',
     criadoEm: new Date().toISOString()
   });
   return cred.user;
@@ -52,7 +52,7 @@ export async function loginComGoogle() {
   const provider = new GoogleAuthProvider();
   const cred = await signInWithPopup(auth, provider);
   const user = cred.user;
-  // Verifica se já tem perfil — se não, cria como cliente pendente
+  // Verifica se já tem perfil — se não, cria como cliente aprovado
   const snap = await getDoc(doc(db, 'usuarios', user.uid));
   if (!snap.exists()) {
     await setDoc(doc(db, 'usuarios', user.uid), {
@@ -60,7 +60,7 @@ export async function loginComGoogle() {
       email: user.email,
       telefone: user.phoneNumber || '',
       tipo: 'cliente',
-      status: 'pendente',
+      status: 'aprovado',
       criadoEm: new Date().toISOString()
     });
   }

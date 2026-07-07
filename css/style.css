@@ -68,6 +68,30 @@ body {
 .page { display: none; padding: 12px 14px 96px; }
 .page.active { display: block; }
 .card { background: var(--surface-2); border: 0.5px solid var(--border); border-radius: 12px; padding: 14px 16px; margin-bottom: 10px; overflow: hidden; }
+.fechamento-card { padding: 0; overflow: hidden; }
+.fechamento-header { padding: 14px 16px 12px; display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; border-bottom: 0.5px solid var(--border); }
+.fechamento-title { font-size: 15px; font-weight: 700; }
+.fechamento-periodo { font-size: 12px; color: var(--text-muted); margin-top: 3px; }
+.fechamento-summary-stack { display: flex; flex-direction: column; gap: 10px; padding: 12px 14px 14px; }
+.fechamento-section { border: 0.5px solid var(--border); border-radius: 14px; overflow: hidden; background: var(--surface-2); }
+.fechamento-section.success .fechamento-section-header { background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%); color: var(--text-success); }
+.fechamento-section.danger .fechamento-section-header { background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%); color: var(--text-danger); }
+.fechamento-section.neutral .fechamento-section-header { background: var(--surface-1); color: var(--text-secondary); }
+.fechamento-section-header { padding: 10px 12px; font-weight: 700; font-size: 13px; }
+.fechamento-table { display: flex; flex-direction: column; }
+.fechamento-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; border-top: 0.5px solid var(--border); }
+.fechamento-row:first-child { border-top: none; }
+.fechamento-row.subtotal { background: rgba(0,0,0,.02); font-weight: 700; }
+.fechamento-row-label { font-size: 13px; color: var(--text-secondary); }
+.fechamento-row-value { font-size: 13px; font-weight: 600; color: var(--text-primary); white-space: nowrap; }
+.fechamento-row-label.strong, .fechamento-row-value.strong { color: var(--text-primary); font-weight: 700; }
+.fechamento-amount-only { padding: 16px 12px 18px; text-align: center; font-size: 22px; font-weight: 700; color: var(--text-primary); }
+.fechamento-kpi { border-radius: 14px; padding: 14px 14px; border: 0.5px solid var(--border); background: var(--surface-1); display: flex; flex-direction: column; gap: 4px; }
+.fechamento-kpi-label { font-size: 12px; color: var(--text-muted); }
+.fechamento-kpi-value { font-size: 22px; font-weight: 700; }
+.fechamento-kpi.profit.positive { background: linear-gradient(135deg, #ecfdf5 0%, #f0fdf4 100%); border-color: var(--border-success); color: var(--text-success); }
+.fechamento-kpi.profit.negative { background: linear-gradient(135deg, #fef2f2 0%, #fff7f7 100%); border-color: var(--border-danger); color: var(--text-danger); }
+.fechamento-kpi.profit.positive .fechamento-kpi-label, .fechamento-kpi.profit.positive .fechamento-kpi-value, .fechamento-kpi.profit.negative .fechamento-kpi-label, .fechamento-kpi.profit.negative .fechamento-kpi-value { color: inherit; }
 .stat-row { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; margin-bottom: 12px; }
 .stat { background: var(--surface-1); border-radius: var(--radius); padding: 10px 8px; text-align: center; }
 .stat-val { font-size: 22px; font-weight: 600; display: block; }

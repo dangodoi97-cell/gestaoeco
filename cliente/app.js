@@ -10,6 +10,7 @@ import {
   escutarSolicitacoesPagamento, atualizarSolicitacaoPagamento,
   escutarNotificacoes, marcarNotificacaoLida,
   escutarOrcamentos, decidirOrcamento,
+  escutarFechamentosCaixa,
   enviarAvaliacao,
   uploadFoto, fileParaBase64,
   hoje, diasDiff
@@ -31,7 +32,7 @@ observarAuth(async (user, perfil) => {
 window.sairConta = async () => { await logout(); window.location.href = '../index.html'; };
 
 // ---------- ESTADO ----------
-let db_obras = [], db_precos = [], db_solicitacoes = [], db_pagamentosCliente = [], db_cobrancas = [], db_notificacoes = [], db_orcamentos = [];
+let db_obras = [], db_precos = [], db_solicitacoes = [], db_pagamentosCliente = [], db_cobrancas = [], db_notificacoes = [], db_orcamentos = [], db_fechamentos = [];
 let obraAtiva = null;
 let unsubEtapasAtivas = null, unsubTodasEtapas = null;
 let solFotos = [];
@@ -86,6 +87,10 @@ function iniciarApp() {
     renderObras();
     updateBadge();
   }, usuarioAtual.uid);
+  escutarFechamentosCaixa(f => {
+    db_fechamentos = f;
+    if (document.getElementById('page-financeiro').classList.contains('active')) renderFinanceiro();
+  });
 }
 
 // ---------- HELPERS ----------
@@ -490,6 +495,20 @@ function renderFinanceiro() {
   if (!db_obras.length) { el.innerHTML = `<div class="empty"><i class="ti ti-cash-off"></i><p>Nenhuma obra encontrada.</p></div>`; return; }
 
   let totalGeralObra = 0, totalGeralPago = 0;
+  const fechamentoMaisRecente = db_fechamentos[0];
+  const resumoFechamentoHTML = fechamentoMaisRecente ? `
+    <div class="card" style="margin-bottom:12px;border-left:4px solid var(--brand)">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div style="font-size:15px;font-weight:600">Resumo do último fechamento</div>
+        <span class="chip chip-green">${fechamentoMaisRecente.periodoInicio || '—'} · ${fechamentoMaisRecente.periodoFim || '—'}</span>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div class="stat"><span class="stat-val" style="font-size:13px">${fmtBRL(fechamentoMaisRecente.totalReceber || 0)}</span><span class="stat-lbl">Recebido</span></div>
+        <div class="stat"><span class="stat-val" style="font-size:13px">${fmtBRL(fechamentoMaisRecente.totalRepasse || 0)}</span><span class="stat-lbl">Repasses</span></div>
+        <div class="stat"><span class="stat-val" style="font-size:13px">${fmtBRL(fechamentoMaisRecente.totalEncargos || 0)}</span><span class="stat-lbl">Encargos</span></div>
+        <div class="stat"><span class="stat-val" style="font-size:13px;color:var(--brand)">${fmtBRL(fechamentoMaisRecente.lucro || 0)}</span><span class="stat-lbl">Lucro</span></div>
+      </div>
+    </div>` : '';
   const html = db_obras.map(o => {
     const etapas = todas.filter(e => e.obraId === o.id);
     const totalObra = etapas.reduce((s, e) => s + parseBRL(e.val), 0);
@@ -539,7 +558,7 @@ function renderFinanceiro() {
   }).join('');
 
   const saldoGeral = totalGeralObra - totalGeralPago;
-  el.innerHTML = `
+  el.innerHTML = resumoFechamentoHTML + `
     <div class="card" style="background:#0f172a;color:#fff;margin-bottom:16px;border:none">
       <div style="font-size:13px;color:#94a3b8;margin-bottom:8px">Resumo geral</div>
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">

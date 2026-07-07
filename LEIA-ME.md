@@ -13,6 +13,24 @@ Sem isso, o app vai dar erro de permissão ao tentar enviar notificações ou or
 
 **Como usar o orçamento (painel admin):** dentro de uma obra com cliente vinculado, tem um botão azul "Enviar orçamento". Enquanto o cliente não aprovar, a obra fica bloqueada para novas etapas/diárias (aparece um aviso no topo). Se o cliente rejeitar, é só enviar um novo orçamento.
 
+### 🐛 Bug corrigido: cobrança não chegava para o cliente
+A tela de "cobrar cliente" (Solicitações de pagamento) exigia que a etapa estivesse com `aprovacao: 'aprovado'` pra poder ser selecionada. Como esse campo não existe mais (etapas não passam mais por aprovação do cliente), nenhuma etapa aparecia disponível pra cobrança — por isso a cobrança nunca era criada e o cliente nunca via nada. Isso já foi corrigido: agora qualquer etapa concluída e ainda não paga pode ser cobrada.
+
+### 📇 Índices do Firestore (importante!)
+Esta atualização usa consultas do tipo "filtrar por cliente + ordenar por data" em várias coleções (`notificacoes`, `orcamentos`, `solicitacoes_pagamento`, etc). O Firestore exige um **índice composto** pra isso funcionar. Se algo não aparece do lado do cliente mesmo com as regras publicadas, quase sempre é isso.
+
+**Como verificar:** abra o app do cliente, aperte F12 (ferramentas de desenvolvedor) → aba "Console". Se aparecer um erro tipo `FAILED_PRECONDITION: The query requires an index`, ele vem com um **link direto** — clique nele, confirme no Firebase, espera 1-2 minutos e recarrega o app.
+
+**Alternativa manual** (sem precisar do erro/link): no Firebase, vá em **Firestore Database → Índices → Índices compostos → Adicionar índice**, e crie um para cada coleção abaixo com os mesmos 2 campos:
+- Coleção: `obras` | Campos: `clienteId` (Crescente) + `criadoEm` (Decrescente)
+- Coleção: `solicitacoes` | mesmos campos
+- Coleção: `pagamentos_cliente` | mesmos campos
+- Coleção: `solicitacoes_pagamento` | mesmos campos
+- Coleção: `notificacoes` | mesmos campos
+- Coleção: `orcamentos` | mesmos campos
+
+(Se você usa a Firebase CLI, o arquivo `firestore.indexes.json` já vem pronto no projeto — é só rodar `firebase deploy --only firestore:indexes`.)
+
 ---
 
 Este sistema tem 3 áreas:
