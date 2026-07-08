@@ -5,9 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Obras Admin">
-<meta name="theme-color" content="#ffffff">
+<meta name="theme-color" content="#1D9E75">
 <title>Painel Administrativo</title>
-<link rel="manifest" href="../manifest.json">
+<link rel="manifest" href="./manifest.json">
+<link rel="icon" type="image/png" sizes="32x32" href="../icons/favicon-32.png">
+<link rel="apple-touch-icon" href="../icons/apple-touch-icon.png">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.47.0/tabler-icons.min.css" integrity="sha384-PwEnNZvp50/uDLtKrd1s2D4Xe/y+fCVtEigigjik/PgHlDXUF1uJ32m7guk/XWYV" crossorigin="anonymous">
 <link rel="stylesheet" href="../css/style.css">
 <style>
@@ -170,11 +172,18 @@
   <div class="list-card" onclick="goPage('precos')"><i class="ti ti-receipt"></i> &nbsp;Tabela de preços (cliente)</div>
   <div class="list-card" onclick="goPage('repasse')"><i class="ti ti-coin"></i> &nbsp;Tabela de repasse (interna)</div>
   <div class="list-card" onclick="goPage('diarias')"><i class="ti ti-calendar"></i> &nbsp;Tabela de diárias</div>
+  <div class="list-card" onclick="goPage('lixeira')"><i class="ti ti-trash"></i> &nbsp;Lixeira</div>
+  <div class="list-card" onclick="goPage('fechamento')"><i class="ti ti-wallet"></i> &nbsp;Fechamento de caixa</div>
   <div class="list-card" onclick="goPage('clientes')"><i class="ti ti-users"></i> &nbsp;Clientes</div>
   <div class="list-card" onclick="goPage('admins')"><i class="ti ti-shield"></i> &nbsp;Administradores</div>
 </div>
 
 <div id="page-pagamentos-cli" class="page" style="display:none"></div>
+<div id="page-lixeira" class="page">
+  <button class="back-btn" onclick="goPage('mais')"><i class="ti ti-arrow-left"></i> Voltar</button>
+  <div class="sec-title">Lixeira <button class="btn-sm btn-danger" onclick="limparLixeira()"><i class="ti ti-trash"></i> Limpar lixeira</button></div>
+  <div id="lista-lixeira"></div>
+</div>
 <div id="page-precos" class="page">
   <button class="back-btn" onclick="goPage('mais')"><i class="ti ti-arrow-left"></i> Voltar</button>
   <div class="sec-title">Tabela de preços (cliente) <button class="btn-sm" onclick="showModalPreco()"><i class="ti ti-plus"></i> Adicionar</button></div>
@@ -190,6 +199,34 @@
   <button class="back-btn" onclick="goPage('mais')"><i class="ti ti-arrow-left"></i> Voltar</button>
   <div class="sec-title">Tabela de diárias <button class="btn-sm" onclick="showModalDiaria()"><i class="ti ti-plus"></i> Adicionar</button></div>
   <div class="card"><div id="lista-diarias"></div></div>
+</div>
+<div id="page-fechamento" class="page">
+  <button class="back-btn" onclick="goPage('mais')"><i class="ti ti-arrow-left"></i> Voltar</button>
+  <div class="sec-title">Fechamento de caixa <button class="btn-sm btn-success" onclick="abrirNovaCobranca()"><i class="ti ti-cash"></i> Cobrar</button></div>
+  <div class="card">
+    <div class="g2 mb">
+      <div><label>Data inicial</label><input type="date" id="fechamento-data-inicio" onchange="renderFechamentoCaixa()"></div>
+      <div><label>Data final</label><input type="date" id="fechamento-data-fim" onchange="renderFechamentoCaixa()"></div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn-sm btn-success" onclick="renderFechamentoCaixa()"><i class="ti ti-calculator"></i> Calcular</button>
+      <button class="btn-sm" onclick="abrirNovaCobranca()"><i class="ti ti-send"></i> Cobrar</button>
+    </div>
+  </div>
+  <div id="fechamento-resumo" style="margin-top:10px"></div>
+  <div class="card" style="margin-top:10px">
+    <div class="sec-title" style="margin-bottom:8px">Despesas extras</div>
+    <div class="g2 mb">
+      <div><label>Descrição</label><input type="text" id="fechamento-extra-desc" placeholder="Ex: Gasolina"></div>
+      <div><label>Valor (R$)</label><input type="text" id="fechamento-extra-valor" placeholder="0,00" oninput="fmtVal(this)"></div>
+    </div>
+    <button class="btn-sm btn-success" onclick="adicionarDespesaExtra()"><i class="ti ti-plus"></i> Adicionar despesa</button>
+    <div id="fechamento-extras-lista" style="margin-top:8px"></div>
+  </div>
+  <div class="card" style="margin-top:10px">
+    <div class="sec-title" style="margin-bottom:8px">Itens do período</div>
+    <div id="fechamento-itens"></div>
+  </div>
 </div>
 <div id="page-clientes" class="page">
   <button class="back-btn" onclick="goPage('mais')"><i class="ti ti-arrow-left"></i> Voltar</button>
@@ -401,7 +438,7 @@
 <div class="modal-overlay" id="modal-repasse" onclick="bgClose(event,'modal-repasse')">
   <div class="modal"><div class="modal-handle"></div><div class="modal-title" id="repasse-modal-title">Novo repasse</div>
     <div class="mb"><label>Nome do serviço</label><input type="text" id="repasse-nome" placeholder="Ex: Parede de Tijolo Sem Reboco Até 2m"></div>
-    <div class="mb"><label>Custo por m² (R$)</label><input type="text" id="repasse-val" placeholder="0,00" oninput="fmtVal(this)"></div>
+    <div class="mb"><label>Valor de repasse (R$) <span style="font-size:10px;color:var(--text-muted)">— opcional, pode ser preenchido depois</span></label><input type="text" id="repasse-val" placeholder="0,00" oninput="fmtVal(this)"></div>
     <button class="btn-main" id="btn-salvar-repasse" onclick="salvarRepasse()">Salvar</button>
   </div>
 </div>

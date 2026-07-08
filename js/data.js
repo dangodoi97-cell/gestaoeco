@@ -239,6 +239,29 @@ export function diasDiff(d1, d2) { return Math.round((new Date(d2) - new Date(d1
 
 // ---------- EXCLUIR OBRA ----------
 export async function excluirObra(obraId) {
+  const snap = await getDoc(doc(db, 'obras', obraId));
+  if (!snap.exists()) return;
+  const dados = snap.data();
+  await updateDoc(doc(db, 'obras', obraId), {
+    status: 'lixeira',
+    statusAnterior: dados.status && dados.status !== 'lixeira' ? dados.status : 'andamento',
+    removidaEm: serverTimestamp()
+  });
+}
+
+export async function restaurarObra(obraId) {
+  const snap = await getDoc(doc(db, 'obras', obraId));
+  if (!snap.exists()) return;
+  const dados = snap.data();
+  const statusAnterior = dados.statusAnterior || 'andamento';
+  await updateDoc(doc(db, 'obras', obraId), {
+    status: statusAnterior,
+    statusAnterior: null,
+    removidaEm: null
+  });
+}
+
+export async function limparLixeiraObra(obraId) {
   await deleteDoc(doc(db, 'obras', obraId));
 }
 
@@ -262,7 +285,47 @@ export async function excluirPagamentoParceiro(parceiroId, pagamentoId) {
   await deleteDoc(doc(db, 'parceiros', parceiroId, 'pagamentos', pagamentoId));
 }
 
-// ---------- TABELA DE DIÁRIAS ----------
+// ---------- FECHAMENTOS DE CAIXA ----------
+export async function criarFechamentoCaixa(dados) {
+  const ref_ = await addDoc(collection(db, 'fechamentos_caixa'), {
+    ...dados,
+    criadoEm: serverTimestamp()
+  });
+  return ref_.id;
+}
+
+export function escutarFechamentosCaixa(callback) {
+  const q = query(collection(db, 'fechamentos_caixa'), orderBy('criadoEm', 'desc'));
+  return onSnapshot(q, snap => {
+    callback(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+  });
+}
+
+export async function atualizarFechamentoCaixa(fechamentoId, dados) {
+  await updateDoc(doc(db, 'fechamentos_caixa', fechamentoId), dados);
+}
+
+// ---------- NOTIFICAÇÕES DE PARCEIROS ----------
+export async function criarNotificacaoParceiro(parceiroId, dados) {
+  const ref_ = await addDoc(collection(db, 'parceiros', parceiroId, 'notificacoes'), {
+    ...dados,
+    criadoEm: serverTimestamp()
+  });
+  return ref_.id;
+}
+
+export function escutarNotificacoesParceiro(parceiroId, callback) {
+  const q = query(collection(db, 'parceiros', parceiroId, 'notificacoes'), orderBy('criadoEm', 'desc'));
+  return onSnapshot(q, snap => {
+    callback(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+  });
+}
+
+export async function atualizarNotificacaoParceiro(parceiroId, notificacaoId, dados) {
+  await updateDoc(doc(db, 'parceiros', parceiroId, 'notificacoes', notificacaoId), dados);
+}
+
+// ---------- DIÁRIAS ----------
 export function escutarDiarias(callback) {
   const q = query(collection(db, 'diarias'), orderBy('nome', 'asc'));
   return onSnapshot(q, snap => {

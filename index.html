@@ -4,9 +4,11 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="theme-color" content="#0f172a">
+<meta name="theme-color" content="#1D9E75">
 <title>EcoSistema da Construção</title>
-<link rel="manifest" href="manifest.json">
+<link rel="manifest" href="./manifest.json">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.47.0/tabler-icons.min.css">
 <link rel="stylesheet" href="css/style.css">
 <style>
@@ -161,7 +163,7 @@ document.getElementById('form-cadastrar').addEventListener('submit', async e => 
   btn.disabled = true; btn.textContent = 'Criando conta...';
   try {
     await cadastrarCliente(document.getElementById('cad-nome').value.trim(), document.getElementById('cad-email').value.trim(), document.getElementById('cad-senha').value, document.getElementById('cad-telefone').value.trim());
-    window.location.href = 'pendente.html';
+    window.location.href = 'cliente/index.html';
   } catch (err) { erro(mensagemErroFirebase(err)); btn.disabled = false; btn.textContent = 'Criar conta de cliente'; }
 });
 

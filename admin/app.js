@@ -4,7 +4,7 @@
 import { auth } from '../js/firebase-config.js';
 import { observarAuth, logout, cadastrarAdmin, mensagemErroFirebase } from '../js/auth.js';
 import {
-  criarObra, atualizarObra, escutarObras, excluirObra,
+  criarObra, atualizarObra, escutarObras, excluirObra, restaurarObra, limparLixeiraObra,
   criarEtapa, atualizarEtapa, escutarEtapas, escutarTodasEtapas, excluirEtapa,
   criarEncargo, escutarEncargos, excluirEncargo,
   escutarPrecos, criarPreco, atualizarPreco, excluirPreco,
@@ -17,6 +17,8 @@ import {
   escutarSolicitacoes, atualizarSolicitacao,
   escutarPagamentosCliente, atualizarPagamentoCliente,
   criarSolicitacaoPagamento, escutarSolicitacoesPagamento, atualizarSolicitacaoPagamento,
+  criarFechamentoCaixa, escutarFechamentosCaixa,
+  criarNotificacaoParceiro, escutarNotificacoesParceiro, atualizarNotificacaoParceiro,
   notificarWhatsApp,
   criarNotificacao, escutarNotificacoes, marcarNotificacaoLida, enviarOrcamento, escutarOrcamentos,
   uploadFoto, fileParaBase64,
@@ -82,17 +84,20 @@ window.abrirNotificacaoAdmin = function(id) {
 };
 
 // ---------- ESTADO ----------
-let db_obras = [], db_precos = [], db_repasses = [], db_parceiros = [], db_clientes = [], db_admins = [], db_solicitacoes = [], db_diarias = [], db_pagamentosAdmin = [], db_solicitacoesPagamento = [], db_orcamentos = [], db_notificacoesAdmin = [];
+let db_obras = [], db_precos = [], db_repasses = [], db_parceiros = [], db_clientes = [], db_admins = [], db_solicitacoes = [], db_diarias = [], db_pagamentosAdmin = [], db_solicitacoesPagamento = [], db_orcamentos = [], db_notificacoesAdmin = [], db_encargos = [], db_fechamentos = [];
 let obraAtiva = null, etapaConclId = null, etapaFotoExtraId = null;
-let editPrecoId = null, editRepasseId = null, editParceiroId = null, editDiariaId = null;
+let editPrecoId = null, editPrecoNome = null, editRepasseId = null, editParceiroId = null, editDiariaId = null;
 let parceiroDetalheId = null, solicitacaoAceitarId = null;
 let etFotos = {}, concFoto = null, encFoto = null, extraFoto = null, pagFoto = null;
-let unsubEtapasAtivas = null, unsubTodasEtapas = null, unsubEncargos = null, unsubPagamentos = null;
+let unsubEtapasAtivas = null, unsubTodasEtapas = null, unsubEncargos = null, unsubPagamentos = null, unsubNotificacoesParceiro = null, unsubEncargosGlobais = [];
 let fechamentoClienteSelecionado = '';
+let encargoSnapshot = {};
+let fechamentoDespesasExtras = [];
+let fechamentoDespesasConfirmadas = [];
 
 function iniciarApp() {
   escutarObras(obras => {
-    db_obras = obras; renderObras();
+    db_obras = obras; renderObras(); renderLixeira();
     if (document.getElementById('page-obra-detalhe').classList.contains('active') && obraAtiva) {
       const at = obras.find(o => o.id === obraAtiva.id);
       if (at) { obraAtiva = at; renderDetalheObra(); }
@@ -100,7 +105,19 @@ function iniciarApp() {
     if (unsubTodasEtapas) unsubTodasEtapas();
     unsubTodasEtapas = escutarTodasEtapas(obras, todas => {
       window._todasEtapas = todas;
-      renderExecucao(); renderAprovacao(); updateBadge(); renderFechamentoResumo();
+      renderExecucao(); renderAprovacao(); updateBadge(); renderFechamentoResumo(); renderFechamentoCaixa();
+    });
+    if (unsubEncargosGlobais.length) { unsubEncargosGlobais.forEach(u => u()); }
+    unsubEncargosGlobais = [];
+    encargoSnapshot = {};
+    db_encargos = [];
+    obras.forEach(o => {
+      const unsub = escutarEncargos(o.id, enc => {
+        encargoSnapshot[o.id] = enc;
+        db_encargos = Object.entries(encargoSnapshot).flatMap(([obraId, lista]) => lista.map(e => ({ ...e, obraId, obraNome: (db_obras.find(x => x.id === obraId) || {}).nome || '' })));
+        renderFechamentoCaixa();
+      });
+      unsubEncargosGlobais.push(unsub);
     });
   });
   escutarPrecos(p => { db_precos = p; renderPrecos(); });
@@ -112,6 +129,7 @@ function iniciarApp() {
   escutarDiarias(d => { db_diarias = d; renderDiarias(); });
   escutarPagamentosCliente(p => { db_pagamentosAdmin = p; updateBadgePagamentos(); renderPagamentosAdmin(); });
   escutarSolicitacoesPagamento(s => { db_solicitacoesPagamento = s; renderContestacoes(); updateBadge(); });
+  escutarFechamentosCaixa(f => { db_fechamentos = f; renderFechamentoCaixa(); });
   escutarOrcamentos(o => {
     db_orcamentos = o;
     renderAprovacao();
@@ -133,6 +151,20 @@ window.closeModal = id => document.getElementById(id).classList.remove('show');
 window.bgClose = (e, id) => { if (e.target === document.getElementById(id)) window.closeModal(id); };
 function fmtBRL(v) { return 'R$ ' + parseFloat(v || 0).toFixed(2).replace('.', ','); }
 function parseBRL(s) { return parseFloat((s || '0').replace(',', '.')) || 0; }
+function dataParaTexto(v) {
+  if (!v) return null;
+  if (typeof v.toDate === 'function') return v.toDate().toISOString().split('T')[0];
+  if (typeof v === 'string') return v.slice(0, 10);
+  if (v instanceof Date) return v.toISOString().split('T')[0];
+  return null;
+}
+function estaNoPeriodo(v, inicio, fim) {
+  const d = dataParaTexto(v);
+  if (!d) return false;
+  if (inicio && d < inicio) return false;
+  if (fim && d > fim) return false;
+  return true;
+}
 
 function fotosHTML(antes, depois, extras) {
   let html = '';
@@ -243,7 +275,7 @@ window.abrirModalNovaObra = function() {
   document.getElementById('obra-cliente').value = '';
   window.showModal('modal-nova-obra');
 };
-const TITULOS = { obras:'Painel Admin', execucao:'Em execução', aprovacao:'Notificações', parceiros:'Parceiros', mais:'Mais opções', precos:'Tabela de preços', repasse:'Tabela de repasse', diarias:'Tabela de diárias', clientes:'Clientes', admins:'Administradores', solicitacoes:'Solicitações', 'pagamentos-cli':'Pagamentos dos clientes' };
+const TITULOS = { obras:'Painel Admin', execucao:'Em execução', aprovacao:'Notificações', parceiros:'Parceiros', mais:'Mais opções', precos:'Tabela de preços', repasse:'Tabela de repasse', diarias:'Tabela de diárias', lixeira:'Lixeira', fechamento:'Fechamento de caixa', clientes:'Clientes', admins:'Administradores', solicitacoes:'Solicitações', 'pagamentos-cli':'Pagamentos dos clientes' };
 
 window.goPage = function(p) {
   document.querySelectorAll('.page').forEach(x => x.classList.remove('active'));
@@ -253,7 +285,234 @@ window.goPage = function(p) {
   if (nav) nav.classList.add('active');
   if (TITULOS[p]) document.getElementById('topbar-content').innerHTML = `<h1>${TITULOS[p]}</h1>`;
   updateBadge();
+  if (p === 'fechamento') {
+    const inicio = document.getElementById('fechamento-data-inicio');
+    const fim = document.getElementById('fechamento-data-fim');
+    if (inicio && !inicio.value) {
+      const hoje = new Date();
+      const inicioMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1).toISOString().split('T')[0];
+      inicio.value = inicioMes;
+    }
+    if (fim && !fim.value) {
+      fim.value = new Date().toISOString().split('T')[0];
+    }
+    renderFechamentoCaixa();
+  }
 };
+
+window.abrirFechamentoCaixa = function() {
+  const inicio = document.getElementById('fechamento-data-inicio');
+  const fim = document.getElementById('fechamento-data-fim');
+  if (inicio && !inicio.value) {
+    const hoje = new Date();
+    const inicioMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1).toISOString().split('T')[0];
+    inicio.value = inicioMes;
+  }
+  if (fim && !fim.value) {
+    fim.value = new Date().toISOString().split('T')[0];
+  }
+  window.goPage('fechamento');
+  renderFechamentoCaixa();
+};
+
+async function renderFechamentoCaixa() {
+  const resumoEl = document.getElementById('fechamento-resumo');
+  const itensEl = document.getElementById('fechamento-itens');
+  const extrasEl = document.getElementById('fechamento-extras-lista');
+  if (!resumoEl || !itensEl || !extrasEl) return;
+
+  const inicio = document.getElementById('fechamento-data-inicio')?.value || '';
+  const fim = document.getElementById('fechamento-data-fim')?.value || '';
+  const etapasPeriodo = (window._todasEtapas || []).filter(e => e.status === 'concluido' && estaNoPeriodo(e.dataConc, inicio, fim));
+  const etapasConcluidas = etapasPeriodo.filter(e => !e.isDiaria && !e.isDiariaAvulsa);
+  const diariasPeriodo = etapasPeriodo.filter(e => e.isDiaria || e.isDiariaAvulsa);
+
+  const valorEtapas = etapasConcluidas.reduce((s, e) => s + parseBRL(e.val), 0);
+  const valorDiarias = diariasPeriodo.reduce((s, e) => s + parseBRL(e.val), 0);
+  const valorGanhos = valorEtapas + valorDiarias;
+
+  const parceirosResumo = {};
+  etapasPeriodo.forEach(e => {
+    const lista = Array.isArray(e.parceiros) && e.parceiros.length ? e.parceiros : [];
+    if (lista.length) {
+      lista.forEach(p => {
+        const valor = parseBRL(p.repasse);
+        if (!valor) return;
+        const key = p.parceiroId || p.nome;
+        if (!parceirosResumo[key]) parceirosResumo[key] = { id: key, nome: p.nome || 'Parceiro', valor: 0 };
+        parceirosResumo[key].valor += valor;
+      });
+    } else if (e.valRepasse) {
+      const key = e.parceiroNome || 'Parceiro não identificado';
+      if (!parceirosResumo[key]) parceirosResumo[key] = { id: key, nome: key, valor: 0 };
+      parceirosResumo[key].valor += parseBRL(e.valRepasse);
+    }
+  });
+  const valorRepasse = Object.values(parceirosResumo).reduce((s, p) => s + p.valor, 0);
+
+  const encargosPeriodo = db_encargos.filter(e => estaNoPeriodo(e.criadoEm, inicio, fim));
+  const valorEncargos = encargosPeriodo.reduce((s, e) => s + parseBRL(e.valor), 0);
+  const valorExtrasConfirmados = fechamentoDespesasConfirmadas.reduce((s, e) => s + parseBRL(e.valor), 0);
+  const valorDespesas = valorRepasse + valorExtrasConfirmados;
+  const lucro = valorGanhos - valorDespesas;
+  const valorReceberCliente = valorGanhos + valorEncargos;
+  const fechamentoExistente = db_fechamentos.find(f => f.periodoInicio === inicio && f.periodoFim === fim);
+
+  const renderLinhaResumo = (label, valor, isSubtotal = false) => `
+    <div class="fechamento-row${isSubtotal ? ' subtotal' : ''}">
+      <span class="fechamento-row-label${isSubtotal ? ' strong' : ''}">${label}</span>
+      <span class="fechamento-row-value${isSubtotal ? ' strong' : ''}">${fmtBRL(valor)}</span>
+    </div>`;
+
+  resumoEl.innerHTML = `
+    <div class="card fechamento-card">
+      <div class="fechamento-header">
+        <div>
+          <div class="fechamento-title">Resumo do período</div>
+          <div class="fechamento-periodo">${inicio || '—'}${fim ? ` até ${fim}` : ''}</div>
+        </div>
+        <button class="btn-sm btn-success" onclick="salvarFechamentoCaixa('${inicio}','${fim}',${valorReceberCliente},${valorRepasse},${valorEncargos},${valorDiarias},${valorEtapas},${valorExtrasConfirmados},${lucro})"><i class="ti ti-device-floppy"></i> Salvar fechamento</button>
+      </div>
+
+      <div class="fechamento-summary-stack">
+        <div class="fechamento-section success">
+          <div class="fechamento-section-header success">Ganhos</div>
+          <div class="fechamento-table">
+            ${renderLinhaResumo('Etapas concluídas', valorEtapas)}
+            ${renderLinhaResumo('Diárias', valorDiarias)}
+            ${renderLinhaResumo('Subtotal de ganhos', valorGanhos, true)}
+          </div>
+        </div>
+
+        <div class="fechamento-section danger">
+          <div class="fechamento-section-header danger">Despesas</div>
+          <div class="fechamento-table">
+            ${renderLinhaResumo('Repasses', valorRepasse)}
+            ${renderLinhaResumo('Despesas extras confirmadas', valorExtrasConfirmados)}
+            ${renderLinhaResumo('Subtotal de despesas', valorDespesas, true)}
+          </div>
+        </div>
+
+        <div class="fechamento-section neutral">
+          <div class="fechamento-section-header neutral">Encargos</div>
+          <div class="fechamento-amount-only">${fmtBRL(valorEncargos)}</div>
+        </div>
+
+        <div class="fechamento-kpi">
+          <div class="fechamento-kpi-label">Valor total a receber do cliente</div>
+          <div class="fechamento-kpi-value">${fmtBRL(valorReceberCliente)}</div>
+        </div>
+
+        <div class="fechamento-kpi profit ${lucro >= 0 ? 'positive' : 'negative'}">
+          <div class="fechamento-kpi-label">Lucro geral</div>
+          <div class="fechamento-kpi-value">${fmtBRL(lucro)}</div>
+        </div>
+      </div>
+
+      <div class="divider"></div>
+      <div style="font-size:13px;font-weight:600;margin-bottom:8px;padding:0 14px">Parceiros e saldo devedor</div>
+      <div style="padding:0 14px 14px">
+        ${Object.values(parceirosResumo).length ? Object.values(parceirosResumo).map(p => `<div class="row-item"><div class="row-info"><div class="row-title">${p.nome}</div></div><div style="font-size:13px;font-weight:600;color:var(--text-danger)">${fmtBRL(p.valor)}</div></div>`).join('') : `<div class="empty"><i class="ti ti-users-off"></i><p>Nenhum repasse para parceiros neste período.</p></div>`}
+      </div>
+    </div>`;
+
+  itensEl.innerHTML = etapasPeriodo.length ? etapasPeriodo.map(e => `
+    <div class="row-item">
+      <div class="row-info">
+        <div class="row-title">${e.tipo || 'Item'}</div>
+        <div class="row-meta">${e.obraNome || 'Obra sem nome'} · ${e.isDiaria || e.isDiariaAvulsa ? 'Diária' : 'Etapa concluída'}</div>
+      </div>
+      <div style="font-size:13px;font-weight:600;color:var(--text-success)">${fmtBRL(parseBRL(e.val))}</div>
+    </div>`).join('') : `<div class="empty"><i class="ti ti-clipboard-check"></i><p>Nenhum item concluído neste período.</p></div>`;
+
+  if (fechamentoExistente) {
+    resumoEl.innerHTML += `<div class="alert-box alert-success" style="margin-top:8px"><i class="ti ti-check"></i> Fechamento já salvo para este período.</div>`;
+  }
+
+  extrasEl.innerHTML = `
+    ${fechamentoDespesasExtras.length ? fechamentoDespesasExtras.map((item, index) => `
+      <div class="row-item">
+        <div class="row-info">
+          <div class="row-title">${item.descricao}</div>
+          <div class="row-meta">${fmtBRL(item.valor)}</div>
+        </div>
+        <div style="display:flex;gap:6px">
+          <button class="btn-sm btn-success" onclick="confirmarDespesaExtra(${index})"><i class="ti ti-check"></i></button>
+          <button class="btn-sm btn-danger" onclick="removerDespesaExtra(${index}, 'pendente')"><i class="ti ti-trash"></i></button>
+        </div>
+      </div>`).join('') : ''}
+    ${fechamentoDespesasConfirmadas.length ? fechamentoDespesasConfirmadas.map((item, index) => `
+      <div class="row-item">
+        <div class="row-info">
+          <div class="row-title">${item.descricao}</div>
+          <div class="row-meta">${fmtBRL(item.valor)}</div>
+        </div>
+        <div style="font-size:12px;color:var(--text-muted)">Confirmada</div>
+      </div>`).join('') : ''}
+    ${!fechamentoDespesasExtras.length && !fechamentoDespesasConfirmadas.length ? `<div class="empty"><i class="ti ti-receipt"></i><p>Nenhuma despesa extra adicionada.</p></div>` : ''}`;
+}
+
+window.adicionarDespesaExtra = function() {
+  const desc = document.getElementById('fechamento-extra-desc').value.trim();
+  const valor = document.getElementById('fechamento-extra-valor').value;
+  if (!desc || !valor) { toast('Informe a descrição e o valor da despesa extra'); return; }
+  fechamentoDespesasExtras.push({ descricao: desc, valor });
+  document.getElementById('fechamento-extra-desc').value = '';
+  document.getElementById('fechamento-extra-valor').value = '';
+  renderFechamentoCaixa();
+};
+
+window.confirmarDespesaExtra = function(index) {
+  const item = fechamentoDespesasExtras.splice(index, 1)[0];
+  if (!item) return;
+  fechamentoDespesasConfirmadas.push(item);
+  renderFechamentoCaixa();
+};
+
+window.removerDespesaExtra = function(index, tipo = 'pendente') {
+  if (tipo === 'pendente') fechamentoDespesasExtras.splice(index, 1);
+  else fechamentoDespesasConfirmadas.splice(index, 1);
+  renderFechamentoCaixa();
+};
+
+window.salvarFechamentoCaixa = async function(inicio, fim, totalReceber, totalRepasse, totalEncargos, totalDiarias, totalEtapas, totalExtras, lucro) {
+  if (!inicio || !fim) { toast('Informe as datas do período'); return; }
+  const existente = db_fechamentos.find(f => f.periodoInicio === inicio && f.periodoFim === fim);
+  if (existente) { toast('Este fechamento já foi salvo'); return; }
+  const payload = {
+    periodoInicio: inicio,
+    periodoFim: fim,
+    totalReceber,
+    totalRepasse,
+    totalEncargos,
+    totalDiarias,
+    totalEtapas,
+    totalExtras,
+    lucro,
+    itens: (window._todasEtapas || []).filter(e => e.status === 'concluido' && estaNoPeriodo(e.dataConc, inicio, fim)).map(e => ({ id: e.id, tipo: e.tipo, valor: e.val, obraId: e.obraId, obraNome: e.obraNome, isDiaria: !!(e.isDiaria || e.isDiariaAvulsa) })),
+    parceiros: Object.values((() => {
+      const grupos = {};
+      (window._todasEtapas || []).filter(e => e.status === 'concluido' && estaNoPeriodo(e.dataConc, inicio, fim)).forEach(e => {
+        const lista = Array.isArray(e.parceiros) && e.parceiros.length ? e.parceiros : [];
+        if (lista.length) {
+          lista.forEach(p => {
+            const key = p.parceiroId || p.nome;
+            if (!grupos[key]) grupos[key] = { parceiroId: p.parceiroId || null, nome: p.nome || 'Parceiro', valor: 0 };
+            grupos[key].valor += parseBRL(p.repasse);
+          });
+        } else if (e.valRepasse) {
+          const key = e.parceiroNome || 'Parceiro não identificado';
+          if (!grupos[key]) grupos[key] = { parceiroId: e.parceiroId || null, nome: key, valor: 0 };
+          grupos[key].valor += parseBRL(e.valRepasse);
+        }
+      });
+      return grupos;
+    })())
+  };
+  await criarFechamentoCaixa(payload);
+  toast('Fechamento de caixa salvo');
+  renderFechamentoCaixa();
+}
 
 function updateBadge() {
   const nOrcamentos = db_orcamentos.filter(o => o.status === 'pendente').length;
@@ -279,12 +538,13 @@ function updateBadgeSolicitacoes() {
 // OBRAS
 // ============================================================
 function renderObras() {
-  const and = db_obras.filter(o => o.status === 'andamento').length;
-  const conc = db_obras.filter(o => o.status === 'concluida').length;
-  document.getElementById('s-total').textContent = db_obras.length;
+  const ativas = db_obras.filter(o => o.status !== 'lixeira');
+  const and = ativas.filter(o => o.status === 'andamento').length;
+  const conc = ativas.filter(o => o.status === 'concluida').length;
+  document.getElementById('s-total').textContent = ativas.length;
   document.getElementById('s-and').textContent = and;
   document.getElementById('s-conc').textContent = conc;
-  const obrasExibidas = filtrarObras(db_obras, fechamentoClienteSelecionado, usuariosClientesById());
+  const obrasExibidas = filtrarObras(ativas, fechamentoClienteSelecionado, usuariosClientesById());
   const el = document.getElementById('lista-obras');
   if (!obrasExibidas.length) { el.innerHTML = `<div class="empty"><i class="ti ti-building-off"></i><p>Nenhuma obra ${fechamentoClienteSelecionado ? 'em execução para este filtro' : 'cadastrada'}.</p></div>`; renderFechamentoResumo(); return; }
   el.innerHTML = obrasExibidas.map(o => {
@@ -301,6 +561,7 @@ function renderObras() {
         <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
           <span class="badge ${o.status === 'andamento' ? 'badge-and' : 'badge-done'}">${o.status === 'andamento' ? 'Em andamento' : 'Concluída'}</span>
           ${pgBadge}
+          <button class="btn-sm btn-danger" onclick="event.stopPropagation();excluirObraAcao('${o.id}')" style="font-size:10px;padding:4px 8px"><i class="ti ti-trash"></i></button>
         </div>
       </div>
       ${atrasada ? `<div class="alert-box alert-danger"><i class="ti ti-alert-triangle"></i>Prazo vencido</div>` : ''}
@@ -470,12 +731,62 @@ window.concluirObra = async function(id) {
   toast('Obra concluída');
 };
 
-window.confirmarExcluirObra = async function(id) {
-  if (!confirm('Excluir esta obra permanentemente? Esta ação não pode ser desfeita.')) return;
-  if (!confirm('Tem certeza? Todas as etapas e encargos serão removidos.')) return;
+window.excluirObraAcao = async function(id) {
+  if (!confirm('Enviar esta obra para a lixeira? Ela pode ser restaurada depois.')) return;
   await excluirObra(id);
-  window.goPage('obras');
-  toast('Obra excluída');
+  renderObras(); renderLixeira();
+  toast('Obra enviada para a lixeira');
+};
+
+window.confirmarExcluirObra = async function(id) {
+  window.excluirObraAcao(id);
+};
+
+window.restaurarObraAcao = async function(id) {
+  if (!confirm('Restaurar esta obra?')) return;
+  await restaurarObra(id);
+  renderObras(); renderLixeira();
+  toast('Obra restaurada');
+};
+
+window.limparLixeira = async function() {
+  const excluidas = db_obras.filter(o => o.status === 'lixeira');
+  if (!excluidas.length) { toast('A lixeira já está vazia'); return; }
+  if (!confirm('Limpar permanentemente todas as obras da lixeira? Essa ação não pode ser desfeita.')) return;
+  await Promise.all(excluidas.map(o => limparLixeiraObra(o.id)));
+  renderObras(); renderLixeira();
+  toast('Lixeira limpa');
+};
+
+function renderLixeira() {
+  const el = document.getElementById('lista-lixeira');
+  if (!el) return;
+  const excluidas = db_obras.filter(o => o.status === 'lixeira');
+  if (!excluidas.length) {
+    el.innerHTML = `<div class="empty"><i class="ti ti-trash"></i><p>A lixeira está vazia.</p></div>`;
+    return;
+  }
+  el.innerHTML = excluidas.map(o => `
+    <div class="card" style="margin-bottom:10px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+        <div>
+          <div style="font-size:15px;font-weight:600">${o.nome}</div>
+          ${o.local ? `<div style="font-size:12px;color:var(--text-muted)">${o.local}</div>` : ''}
+        </div>
+        <span class="badge badge-pend">Na lixeira</span>
+      </div>
+      <div class="confirm-bar" style="margin-top:10px">
+        <button class="btn-sm btn-success" onclick="restaurarObraAcao('${o.id}')"><i class="ti ti-arrow-back-up"></i> Restaurar</button>
+        <button class="btn-sm btn-danger" onclick="limparLixeiraObraAcao('${o.id}')"><i class="ti ti-trash"></i> Excluir permanentemente</button>
+      </div>
+    </div>`).join('');
+}
+
+window.limparLixeiraObraAcao = async function(id) {
+  if (!confirm('Excluir permanentemente esta obra?')) return;
+  await limparLixeiraObra(id);
+  renderObras(); renderLixeira();
+  toast('Obra removida da lixeira');
 };
 
 // ============================================================
@@ -1061,6 +1372,12 @@ window.abrirParceiroDetalhe = function(id) {
     p._pagamentos = pags;
     renderPagamentosParceiro(pags);
   });
+  if (unsubNotificacoesParceiro) unsubNotificacoesParceiro();
+  unsubNotificacoesParceiro = escutarNotificacoesParceiro(id, notifs => {
+    const p = db_parceiros.find(x => x.id === id); if (!p) return;
+    p._notificacoes = notifs;
+    renderParceiroDetalhe();
+  });
 };
 
 function renderParceiroDetalhe() {
@@ -1072,7 +1389,6 @@ function renderParceiroDetalhe() {
     (e.parceiros && e.parceiros.some(pp => pp.parceiroId === p.id))
   );
   const totalDevido = historico.filter(e => e.status === 'concluido').reduce((s, e) => {
-    // Se parceiro múltiplo, pega o repasse individual dele
     if (e.parceiros) {
       const pp = e.parceiros.find(pp => pp.parceiroId === p.id);
       return s + parseBRL(pp ? pp.repasse : 0);
@@ -1080,6 +1396,7 @@ function renderParceiroDetalhe() {
     return s + parseBRL(e.valRepasse || e.val);
   }, 0);
   const el = document.getElementById('parceiro-detalhe-content');
+  const notificacoes = (p._notificacoes || []).filter(n => n.status === 'pendente');
   el.innerHTML = `
     <div class="card">
       <div class="g2 mb">
@@ -1092,11 +1409,33 @@ function renderParceiroDetalhe() {
       </div>
     </div>
     <div id="resumo-financeiro-parceiro"></div>
+    ${totalDevido > 0 ? `<div class="card" style="margin-bottom:12px">
+      <div style="font-size:13px;font-weight:700;margin-bottom:6px">Aviso ao parceiro</div>
+      <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">Há um saldo em aberto de ${fmtBRL(totalDevido)}. Envie um aviso para o parceiro confirmar o pagamento.</div>
+      <button class="btn-sm btn-success" onclick="criarAvisoParceiro('${p.id}', ${totalDevido})"><i class="ti ti-bell"></i> Enviar aviso</button>
+      ${notificacoes.length ? `<div style="margin-top:8px;font-size:12px;color:var(--text-danger)">${notificacoes.length} aviso${notificacoes.length>1?'s':''} pendente${notificacoes.length>1?'s':''}</div>` : ''}
+    </div>` : ''}
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
       <div class="sec-title" style="margin-bottom:0">Pagamentos registrados</div>
       <button class="btn-sm btn-success" onclick="abrirRegistrarPagamento('${p.id}')"><i class="ti ti-plus"></i> Registrar</button>
     </div>
     <div id="lista-pagamentos-parceiro"></div>
+    <div class="sec-title" style="margin-top:12px">Notificações do parceiro</div>
+    ${!(p._notificacoes || []).length ? `<div class="empty"><i class="ti ti-bell-off"></i><p>Nenhuma notificação enviada.</p></div>` : (p._notificacoes || []).map(n => `
+      <div class="card" style="margin-bottom:8px">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+          <div>
+            <div style="font-size:13px;font-weight:600">${n.mensagem || 'Saldo em aberto'}</div>
+            <div style="font-size:12px;color:var(--text-muted)">${n.valor ? fmtBRL(n.valor) : ''}${n.motivo ? ` · ${n.motivo}` : ''}</div>
+          </div>
+          <span class="badge ${n.status === 'pago' ? 'badge-done' : n.status === 'nao_pago' ? 'badge-pend' : 'badge-exec'}">${n.status === 'pago' ? 'Pago' : n.status === 'nao_pago' ? 'Não pago' : 'Pendente'}</span>
+        </div>
+        ${n.status === 'pendente' ? `<div style="display:flex;gap:8px;margin-top:8px">
+          <button class="btn-sm btn-success" onclick="marcarNotificacaoParceiro('${p.id}','${n.id}','pago')"><i class="ti ti-check"></i> Pago</button>
+          <button class="btn-sm btn-danger" onclick="marcarNotificacaoParceiro('${p.id}','${n.id}','nao_pago')"><i class="ti ti-x"></i> Não pago</button>
+        </div>` : ''}
+      </div>`).join('')}
+    }
     <div class="sec-title" style="margin-top:12px">Histórico de serviços</div>
     ${!historico.length ? `<div class="empty"><i class="ti ti-clipboard-off"></i><p>Nenhum serviço registrado.</p></div>` :
       `<div class="card">` + historico.map(e => `<div class="row-item">
@@ -1112,8 +1451,16 @@ function renderParceiroDetalhe() {
 function renderPagamentosParceiro(pags) {
   const p = db_parceiros.find(x => x.id === parceiroDetalheId); if (!p) return;
   const todas = window._todasEtapas || [];
-  const historico = todas.filter(e => e.parceiroId === p.id && e.status === 'concluido');
-  const totalDevido = historico.reduce((s, e) => s + parseBRL(e.valRepasse || e.val), 0);
+  const historico = todas.filter(e =>
+    (e.parceiroId === p.id || (e.parceiros && e.parceiros.some(pp => pp.parceiroId === p.id))) && e.status === 'concluido'
+  );
+  const totalDevido = historico.reduce((s, e) => {
+    if (e.parceiros) {
+      const pp = e.parceiros.find(pp => pp.parceiroId === p.id);
+      return s + parseBRL(pp ? pp.repasse : 0);
+    }
+    return s + parseBRL(e.valRepasse || e.val);
+  }, 0);
   const totalPago = pags.reduce((s, pg) => s + parseBRL(pg.valor), 0);
   const saldo = totalDevido - totalPago;
 
@@ -1169,6 +1516,21 @@ window.excluirPagamentoAcao = async function(parceiroId, pagId) {
   await excluirPagamentoParceiro(parceiroId, pagId); toast('Pagamento excluído');
 };
 
+window.criarAvisoParceiro = async function(parceiroId, valor) {
+  await criarNotificacaoParceiro(parceiroId, {
+    mensagem: `Saldo em aberto de ${fmtBRL(valor)}.`,
+    valor,
+    status: 'pendente',
+    motivo: ''
+  });
+  toast('Aviso enviado ao parceiro');
+};
+
+window.marcarNotificacaoParceiro = async function(parceiroId, notifId, status, motivo = '') {
+  await atualizarNotificacaoParceiro(parceiroId, notifId, { status, motivo, respondidoEm: hoje() });
+  toast('Resposta registrada');
+};
+
 // ============================================================
 // TABELAS (preços, repasse, diárias)
 // ============================================================
@@ -1177,25 +1539,32 @@ function renderPrecos() {
   if (!db_precos.length) { el.innerHTML = `<div class="empty"><i class="ti ti-receipt-off"></i><p>Nenhum preço.</p></div>`; return; }
   el.innerHTML = db_precos.map(p => `<div class="price-row"><span class="price-name">${p.nome}</span><span class="price-val">R$ ${p.val}/m²</span><div class="row-actions"><button class="btn-sm" onclick="editarPreco('${p.id}')"><i class="ti ti-edit"></i></button><button class="btn-sm btn-danger" onclick="removerPreco('${p.id}')"><i class="ti ti-trash"></i></button></div></div>`).join('');
 }
-window.showModalPreco = () => { editPrecoId = null; document.getElementById('preco-modal-title').textContent = 'Novo serviço'; document.getElementById('preco-nome').value = ''; document.getElementById('preco-val').value = ''; window.showModal('modal-preco'); };
-window.editarPreco = id => { const p = db_precos.find(x=>x.id===id); if(!p) return; editPrecoId=id; document.getElementById('preco-modal-title').textContent='Editar'; document.getElementById('preco-nome').value=p.nome; document.getElementById('preco-val').value=p.val; window.showModal('modal-preco'); };
+window.showModalPreco = () => { editPrecoId = null; editPrecoNome = null; document.getElementById('preco-modal-title').textContent = 'Novo serviço'; document.getElementById('preco-nome').value = ''; document.getElementById('preco-val').value = ''; window.showModal('modal-preco'); };
+window.editarPreco = id => { const p = db_precos.find(x=>x.id===id); if(!p) return; editPrecoId=id; editPrecoNome=p.nome; document.getElementById('preco-modal-title').textContent='Editar'; document.getElementById('preco-nome').value=p.nome; document.getElementById('preco-val').value=p.val; window.showModal('modal-preco'); };
 window.salvarPreco = async function() {
-  const nome = document.getElementById('preco-nome').value.trim(), val = document.getElementById('preco-val').value;
-  if (!nome||!val) { toast('Preencha todos os campos'); return; }
+  const nome = document.getElementById('preco-nome').value.trim();
+  const val = document.getElementById('preco-val').value;
+  if (!nome || !val) { toast('Preencha o nome e o preço do serviço'); return; }
   const btn = document.getElementById('btn-salvar-preco'); btn.disabled=true;
   try {
     if (editPrecoId) {
       await atualizarPreco(editPrecoId, nome, val);
-      // Atualiza repasse correspondente se existir (pelo nome)
-      const repasseExistente = db_repasses.find(r => r.nome === nome);
-      if (repasseExistente) await atualizarRepasse(repasseExistente.id, nome, repasseExistente.val);
+      const repassePorNovoNome = db_repasses.find(r => r.nome === nome);
+      const repassePorNomeAntigo = editPrecoNome && editPrecoNome !== nome ? db_repasses.find(r => r.nome === editPrecoNome) : null;
+      const repasseAlvo = repassePorNovoNome || repassePorNomeAntigo;
+      if (repasseAlvo) {
+        await atualizarRepasse(repasseAlvo.id, nome, repasseAlvo.val || '');
+      } else {
+        await criarRepasse(nome, '');
+      }
     } else {
       await criarPreco(nome, val);
-      // Cria repasse automaticamente com valor 0,00
       const repasseExistente = db_repasses.find(r => r.nome === nome);
-      if (!repasseExistente) await criarRepasse(nome, '0,00');
+      if (!repasseExistente) {
+        await criarRepasse(nome, '');
+      }
     }
-    window.closeModal('modal-preco'); toast('Salvo — repasse criado com R$ 0,00, edite o valor lá.');
+    window.closeModal('modal-preco'); toast('Salvo — a tabela de repasse foi atualizada com o mesmo nome.');
   } catch(e){ toast('Erro'); }
   btn.disabled=false;
 };
@@ -1204,15 +1573,19 @@ window.removerPreco = async id => { if(!confirm('Excluir?')) return; await exclu
 function renderRepasse() {
   const el = document.getElementById('lista-repasse'); if (!el) return;
   if (!db_repasses.length) { el.innerHTML = `<div class="empty"><i class="ti ti-coin-off"></i><p>Nenhum repasse.</p></div>`; return; }
-  el.innerHTML = db_repasses.map(p => `<div class="price-row"><span class="price-name">${p.nome}</span><span class="price-val">R$ ${p.val}/m²</span><div class="row-actions"><button class="btn-sm" onclick="editarRepasse('${p.id}')"><i class="ti ti-edit"></i></button><button class="btn-sm btn-danger" onclick="removerRepasse('${p.id}')"><i class="ti ti-trash"></i></button></div></div>`).join('');
+  el.innerHTML = db_repasses.map(p => {
+    const valorTexto = p.val ? `R$ ${p.val}/m²` : '<span style="color:var(--text-muted)">Adicionar valor de repasse</span>';
+    return `<div class="price-row"><span class="price-name">${p.nome}</span><span class="price-val">${valorTexto}</span><div class="row-actions"><button class="btn-sm" onclick="editarRepasse('${p.id}')"><i class="ti ti-edit"></i></button><button class="btn-sm btn-danger" onclick="removerRepasse('${p.id}')"><i class="ti ti-trash"></i></button></div></div>`;
+  }).join('');
 }
 window.showModalRepasse = () => { editRepasseId=null; document.getElementById('repasse-modal-title').textContent='Novo repasse'; document.getElementById('repasse-nome').value=''; document.getElementById('repasse-val').value=''; window.showModal('modal-repasse'); };
-window.editarRepasse = id => { const p=db_repasses.find(x=>x.id===id); if(!p) return; editRepasseId=id; document.getElementById('repasse-modal-title').textContent='Editar'; document.getElementById('repasse-nome').value=p.nome; document.getElementById('repasse-val').value=p.val; window.showModal('modal-repasse'); };
+window.editarRepasse = id => { const p=db_repasses.find(x=>x.id===id); if(!p) return; editRepasseId=id; document.getElementById('repasse-modal-title').textContent='Editar'; document.getElementById('repasse-nome').value=p.nome; document.getElementById('repasse-val').value=p.val || ''; window.showModal('modal-repasse'); };
 window.salvarRepasse = async function() {
-  const nome=document.getElementById('repasse-nome').value.trim(), val=document.getElementById('repasse-val').value;
-  if(!nome||!val) { toast('Preencha todos os campos'); return; }
+  const nome=document.getElementById('repasse-nome').value.trim();
+  const val=document.getElementById('repasse-val').value;
+  if(!nome) { toast('Informe o nome do repasse'); return; }
   const btn=document.getElementById('btn-salvar-repasse'); btn.disabled=true;
-  try { if(editRepasseId) await atualizarRepasse(editRepasseId,nome,val); else await criarRepasse(nome,val); window.closeModal('modal-repasse'); toast('Salvo'); } catch(e){ toast('Erro'); }
+  try { if(editRepasseId) await atualizarRepasse(editRepasseId,nome,val || ''); else await criarRepasse(nome,val || ''); window.closeModal('modal-repasse'); toast('Salvo'); } catch(e){ toast('Erro'); }
   btn.disabled=false;
 };
 window.removerRepasse = async id => { if(!confirm('Excluir?')) return; await excluirRepasse(id); toast('Excluído'); };
