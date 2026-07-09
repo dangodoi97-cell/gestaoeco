@@ -663,6 +663,16 @@ function renderDetalheObra() {
       </div>
       <div class="progress-bar"><div class="progress-fill" style="width:${pct}%"></div></div>
       <div style="font-size:11px;color:var(--text-muted);margin-top:2px">${done}/${etapas.length} etapas — ${pct}%</div>
+      ${o.avaliacaoCriterios ? `
+      <div class="divider"></div>
+      <div style="font-size:13px;font-weight:600;margin-bottom:8px">Avaliação do cliente</div>
+      <div style="font-size:13px;line-height:1.8">
+        <div>Tempo de execução: <b>${o.avaliacaoCriterios.tempoExecucao}/5</b></div>
+        <div>Acabamento: <b>${o.avaliacaoCriterios.acabamento}/5</b></div>
+        <div>Organização e limpeza: <b>${o.avaliacaoCriterios.organizacaoLimpeza}/5</b></div>
+        <div style="margin-top:4px">Avaliação Geral: <b>${o.avaliacaoGeral}/5</b></div>
+        ${o.avaliacaoComentario ? `<div style="margin-top:6px;color:var(--text-muted);font-style:italic">"${o.avaliacaoComentario}"</div>` : ''}
+      </div>` : ''}
       <!-- FINANCEIRO DA OBRA -->
       <div class="divider"></div>
       <div style="font-size:13px;font-weight:600;margin-bottom:8px">Financeiro da obra</div>
@@ -1288,6 +1298,7 @@ function renderNotificacoesAdmin() {
       </div>
       ${!n.lida ? `<span class="badge badge-exec" style="font-size:10px">Nova</span>` : ''}
     </div>
+    ${n.tipo === 'avaliacao_registrada' ? `<button class="btn-sm" style="margin-top:8px" onclick="event.stopPropagation();abrirNotificacaoAdmin('${n.id}')"><i class="ti ti-eye"></i> Conferir</button>` : ''}
   </div>`).join('');
 }
 

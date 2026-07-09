@@ -530,3 +530,11 @@
 **Context**: CONSTRUCTION - Unit 3 — correction applied and verified; user has deploy access and will republish firestore.rules separately
 
 ---
+
+## Enhancement Request (Unit 3, FR-4.10 added) — Notification Wording + Obra Detail Display
+**Timestamp**: 2026-07-09T00:00:00Z
+**User Input**: "usando aidlc quero 2 coisas, quando o cliente enviar a avaliação, deve ter uma notificação, obra avaliada, Conferir? algo assim e ao clicar em conferir, vai abrir a obra concluida, e nessa tela de obras tem que aparecer a avaliação na tela"
+**AI Response**: Treated as a clear, low-risk, in-scope extension of FR-4 (Minimal Depth per depth-levels.md — no clarifying-questions round needed) rather than a new unit. Verified the notification→obra routing (`abrirNotificacaoAdmin` → `handleNotificationOpen` → `gotoFnsAdmin.obras` → `abrirObra`) already existed and worked; the actual gaps were (1) the notification title/copy and lack of a visible "Conferir" affordance, and (2) `renderDetalheObra` (admin) having zero rating display, so the notification led to a screen with nothing to see. Fixed: notification `titulo` → "Obra avaliada" (`cliente/app.js`); added an explicit "Conferir" button on the notification card (`admin/app.js`'s `renderNotificacoesAdmin`, `avaliacao_registrada` type only); added a per-obra rating display section to `renderDetalheObra` (3 criteria + Geral + comentário), distinct from the parceiro's accumulated average shown elsewhere. Updated `requirements.md` (new FR-4.10, corrected FR-4.8) and `functional-design/frontend-components.md`. Re-ran `npm test`: 27/27 passing.
+**Context**: CONSTRUCTION - Unit 3 — enhancement applied and verified; awaiting user approval to commit/push
+
+---

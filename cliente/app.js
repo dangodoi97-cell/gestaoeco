@@ -535,7 +535,7 @@ window.enviarAvaliacaoObra = async function() {
   const obra = db_obras.find(o => o.id === avaliacaoObraId);
   try {
     await criarNotificacao({
-      destinatarioTipo: 'admin', tipo: 'avaliacao_registrada', titulo: `Nova avaliação de ${usuarioAtual.nome || 'cliente'}`,
+      destinatarioTipo: 'admin', tipo: 'avaliacao_registrada', titulo: 'Obra avaliada',
       mensagem: `${usuarioAtual.nome || 'Um cliente'} avaliou a obra "${obra?.nome || ''}" com nota geral ${avaliacaoGeral}/5.`,
       linkPagina: 'obras', linkId: avaliacaoObraId, lida: false
     });

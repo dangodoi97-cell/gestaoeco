@@ -47,6 +47,14 @@
   Tempo de execução: X/5 · Acabamento: X/5 · Organização e limpeza: X/5 · Geral: X.X/5
   ```
 
+## Component Hierarchy — Admin Notification Card (`renderNotificacoesAdmin`) [ADDED 2026-07-09]
+- **Changed**: notifications with `tipo === 'avaliacao_registrada'` now render an explicit `<button>Conferir</button>` inside the card (in addition to the whole card already being clickable), calling the same `abrirNotificacaoAdmin(id)` with `event.stopPropagation()`. **Why**: user request after testing — wanted an explicit, visible "Conferir" action rather than relying only on the whole card being clickable (which existed but wasn't discoverable enough).
+- **Notification content** (`cliente/app.js`'s `enviarAvaliacaoObra`): `titulo` changed from `Nova avaliação de {nome}` to `Obra avaliada` (per user's requested wording); `mensagem` unchanged (still names the cliente, obra, and nota geral).
+
+## Component Hierarchy — Admin Obra Detail (`renderDetalheObra`, admin/app.js) [ADDED 2026-07-09]
+- **Changed**: when `o.avaliacaoCriterios` exists, a new section renders inside the existing header card, right after the progress bar and before the "Financeiro da obra" divider: the 3 criteria + Geral for **that specific obra** (not the parceiro's accumulated average — that stays on the parceiro detail screen, per FR-4.8) + the free-text comment if present.
+- **Why**: user request — the admin notification for a new rating already links to `abrirObra(obraId)` (pre-existing routing, unchanged), but the obra detail screen had no rating display at all until now, so following the notification led nowhere useful.
+
 ## Component Hierarchy — Admin Parceiro Detail (`renderParceiroDetalhe`)
 
 ```
