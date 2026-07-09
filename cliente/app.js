@@ -525,13 +525,23 @@ window.enviarAvaliacaoObra = async function() {
   if (CRITERIOS_AVALIACAO.some(c => !avaliacaoNotas[c])) { toast('Selecione uma nota para todos os critérios'); return; }
   const comentario = document.getElementById('avaliacao-comentario').value.trim();
   const avaliacaoGeral = mediaCriterios(avaliacaoNotas);
-  await enviarAvaliacao(avaliacaoObraId, avaliacaoNotas, avaliacaoGeral, avaliacaoParceirosAtual, comentario);
+  try {
+    await enviarAvaliacao(avaliacaoObraId, avaliacaoNotas, avaliacaoGeral, avaliacaoParceirosAtual, comentario);
+  } catch (err) {
+    console.error('Falha ao enviar avaliação:', err);
+    toast('Não foi possível enviar a avaliação. Tente novamente.');
+    return;
+  }
   const obra = db_obras.find(o => o.id === avaliacaoObraId);
-  criarNotificacao({
-    destinatarioTipo: 'admin', tipo: 'avaliacao_registrada', titulo: `Nova avaliação de ${usuarioAtual.nome || 'cliente'}`,
-    mensagem: `${usuarioAtual.nome || 'Um cliente'} avaliou a obra "${obra?.nome || ''}" com nota geral ${avaliacaoGeral}/5.`,
-    linkPagina: 'obras', linkId: avaliacaoObraId, lida: false
-  });
+  try {
+    await criarNotificacao({
+      destinatarioTipo: 'admin', tipo: 'avaliacao_registrada', titulo: `Nova avaliação de ${usuarioAtual.nome || 'cliente'}`,
+      mensagem: `${usuarioAtual.nome || 'Um cliente'} avaliou a obra "${obra?.nome || ''}" com nota geral ${avaliacaoGeral}/5.`,
+      linkPagina: 'obras', linkId: avaliacaoObraId, lida: false
+    });
+  } catch (err) {
+    console.error('Avaliação salva, mas falhou ao notificar o admin:', err);
+  }
   document.getElementById('modal-avaliacao').classList.remove('show');
   toast('Avaliação enviada! Obrigado.');
 };

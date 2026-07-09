@@ -522,3 +522,11 @@
 **Context**: CONSTRUCTION - Unit 3 Build and Test — correction applied and verified; awaiting user approval to commit/push
 
 ---
+
+## Build and Test — Manual Testing Finding #2 (Silent Failure on Submit, Unit 3)
+**Timestamp**: 2026-07-09T00:00:00Z
+**User Input**: "tem um bug na hora de neviar a avaliação parece que ao clicar nao enviar a notificação identifique, e tambem ao clicar ponha um toaster algo assim de notificação enviada que desaparece com o tempo"
+**AI Response**: Read `enviarAvaliacaoObra` — confirmed it had **no error handling at all** (inherited from the pre-Unit-3 code, never actually try/catch-wrapped despite NFR Requirements' SECURITY-15 disposition claiming "Compliant... follows the existing toast pattern" — that claim was inaccurate; there was no toast-on-failure, just a silent throw). Fixed: wrapped `enviarAvaliacao` in try/catch (error toast + keeps modal open for retry) and `criarNotificacao` in its own non-blocking try/catch (a notify failure no longer masks a successful rating save). Flagged the most likely trigger to the user: `firestore.rules` was pushed to git but never republished to the live Firebase project (manual-deploy project, per `LEIA-ME.md` PASSO 1) — so the live rules still reject the new field shape with permission-denied, which was previously swallowed silently and will now surface as the new error toast. Asked the user whether they have deploy access; confirmed yes — action item is on them, outside this session's reach (no Firebase CLI credentials/session available here). Re-ran `npm test`: 27/27 passing.
+**Context**: CONSTRUCTION - Unit 3 — correction applied and verified; user has deploy access and will republish firestore.rules separately
+
+---
