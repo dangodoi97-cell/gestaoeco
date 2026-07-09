@@ -315,6 +315,8 @@ function renderDetalheObra() {
       </div>
       <div class="financial-bar"><div class="financial-fill" style="width:${pct}%"></div></div>
       <div style="font-size:11px;color:var(--text-muted);margin-top:4px">${done}/${etapas.length} etapas concluídas — ${pct}%</div>
+      ${o.status === 'concluida' && !o.avaliacaoCriterios ? `<button class="btn-brand" style="margin-top:12px;width:100%" onclick="abrirAvaliacao('${o.id}')"><i class="ti ti-star"></i> Avaliar serviço</button>` : ''}
+      ${o.status === 'concluida' && o.avaliacaoCriterios ? `<div style="font-size:12px;color:var(--text-success);margin-top:12px"><i class="ti ti-star-filled"></i> Tempo de execução: ${o.avaliacaoCriterios.tempoExecucao}/5 · Acabamento: ${o.avaliacaoCriterios.acabamento}/5 · Organização e limpeza: ${o.avaliacaoCriterios.organizacaoLimpeza}/5 · Geral: ${o.avaliacaoGeral}/5</div>` : ''}
     </div>`;
   renderEtapasDetalhe(etapas);
 }

@@ -14,6 +14,9 @@
 - `admin/app.js` — imports `calcularAcumuladoParceiro` from `js/avaliacao.js`; new `renderAvaliacaoParceiro(parceiroId)` function, called from `renderParceiroDetalhe` to render the accumulated-rating card (or empty state)
 - `package.json` — `test` script now runs both `js/fechamento.test.js` and `js/avaliacao.test.js`
 
+## Post-Deploy Correction (2026-07-09)
+- `cliente/app.js` — `renderDetalheObra`: added a second "Avaliar serviço" access point (or the submitted breakdown) directly on the obra detail screen's header card, gated on `o.status === 'concluida' && !o.avaliacaoCriterios`. **Why**: manual testing (user's colleague, via a real browser session) found that an obra completed before this feature shipped — or one whose `obra_concluida` notification is no longer visible in the feed — had no way at all to be rated, since the notification row was the only entry point. See `functional-design/frontend-components.md` for the corrected flow. `npm test` re-run after the fix: 27/27 passing (no regression).
+
 ## Not Touched
 - `admin/index.html` — no static markup change needed (the new card is rendered via `innerHTML` from `admin/app.js`, same as the rest of `renderParceiroDetalhe`)
 - Existing `avaliacaoNota` values on already-rated obras — left as dead/unread data (Functional Design Q1=A, no migration)

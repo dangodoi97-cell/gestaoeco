@@ -138,6 +138,7 @@
   - **Automated**: 27/27 unit tests passing, 0 dependency vulnerabilities, integration checks passed by inspection
   - **Not executed this session**: 18 firestore.rules tests (Java unavailable), 10-step manual E2E script (needs live deployment)
   - **Status**: ⛔ GATE — awaiting user approval; explicitly flagged as "Not yet ready for Operations" until rules tests + E2E run
+- [x] Build and Test — Manual Testing Correction (2026-07-09): added a persistent "Avaliar serviço" access point directly on the obra detail screen (`cliente/app.js`'s `renderDetalheObra`), not just via the `obra_concluida` notification row — real testing found obras completed before this feature shipped (or with no visible notification) had no way to be rated at all. Re-verified `npm test`: 27/27 passing.
 - [ ] NFR Requirements - Pending
 - [ ] NFR Design - Pending
 - [ ] Code Generation - Pending

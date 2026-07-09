@@ -23,7 +23,7 @@
 3. `avaliacaoNota` is removed from code and from the `firestore.rules` allow-list, but **not deleted from existing documents** — old values simply become dead/unread data.
 
 ## Rule Set: One-Shot Submission (FR-4.5, Requirements Q7=A/Q8=A)
-1. The rating button appears once, keyed by the absence of `avaliacaoCriterios` on the obra.
+1. The rating button appears once, keyed by the absence of `avaliacaoCriterios` on the obra — now rendered from **two** independent entry points (the notification row and the obra detail screen's header card, per the 2026-07-09 Build and Test correction in `frontend-components.md`), both driven by the exact same gate condition, so there is no risk of the two disagreeing.
 2. No UI path exists to edit or resubmit a rating once `avaliacaoCriterios` is set — same lock semantics as today's `avaliacaoNota`, just on the new field.
 3. `firestore.rules` enforces this the same way the old rule did: the client's `allow update` for an obra only permits writing the new rating fields via `hasOnly([...])`, but does **not** itself prevent a second write attempt with different values (Firestore rules don't easily express "only if this field was previously absent" without a `resource.data` existence check) — **Functional Design recommendation for NFR**: add `!('avaliacaoCriterios' in resource.data)` to the update condition so the rules layer, not just the UI, enforces one-shot submission. This closes the same class of gap Unit 2's security work already addressed elsewhere (never trust the client UI alone for a security/integrity invariant).
 

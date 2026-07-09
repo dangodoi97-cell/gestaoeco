@@ -70,7 +70,8 @@
 - `.parceiro-avaliacao-card` follows the existing `.card` visual language already used throughout `renderParceiroDetalhe`.
 
 ## User Interaction Flow (Client)
-1. Client receives the `obra_concluida` notification (unchanged entry point) and taps "Avaliar serviço".
+0. **[CORRECTED 2026-07-09 during Build and Test]** A second, persistent entry point was added to `renderDetalheObra`'s header card: whenever `o.status === 'concluida'`, either an "Avaliar serviço" button (if `!o.avaliacaoCriterios`) or the already-submitted breakdown (if rated) now renders directly on the obra detail screen — not just on the notification row. **Why**: manual testing found that an obra completed before the client opens/re-opens the notification (or one completed a while ago, whose notification may no longer be visible in the feed) had **no way at all** to be rated — the notification was the only access point, and it's not guaranteed to be visible/findable at the time the client wants to rate. This corrects the original Requirements/Functional Design choice (Q7=A, "same trigger as today, notification-only") — real testing showed that trigger alone is insufficient for a persistent "did we ever rate this obra" affordance, so this unit now implements Q7's declined Option B without a new question round (a bug-fix-level correction, not a new decision to revisit with the user).
+1. Client receives the `obra_concluida` notification (unchanged entry point) and taps "Avaliar serviço" **or** opens the obra directly from the Obras list and taps the same button on its detail screen.
 2. Modal opens showing the credited parceiro name(s) (or nothing, if none) and 3 empty star rows.
 3. Client rates all 3 criteria; the "Avaliação Geral" preview updates live.
 4. Client optionally adds a comment, taps "Enviar".

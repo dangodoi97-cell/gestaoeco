@@ -54,7 +54,7 @@ Repeat the equivalent for admin-triggered events (obra criada/concluída, etapa 
 1. Log in as cliente, on an obra that is `andamento` with at least one `concluido` etapa linked to a parceiro.
 2. Have the admin mark the obra as `concluida`.
    - **Expected**: cliente receives the `obra_concluida` notification; the notification row shows a "Avaliar serviço" button.
-3. Tap "Avaliar serviço".
+3. Tap "Avaliar serviço" (either from the notification row, **or** by opening the obra directly from the Obras list — since 2026-07-09 the same button/breakdown also renders on the obra detail screen's header card, so the notification is no longer the only entry point).
    - **Expected**: modal opens showing "Serviço executado por: {nome do parceiro}" and 3 empty star rows (Tempo de execução, Acabamento, Organização e limpeza) — no "Avaliação Geral" preview yet.
 4. Rate all 3 criteria (e.g. 5, 4, 5).
    - **Expected**: "Avaliação Geral: 4.7/5" preview appears live as soon as all 3 are filled.

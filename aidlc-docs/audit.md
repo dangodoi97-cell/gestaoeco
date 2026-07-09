@@ -514,3 +514,11 @@
 **Context**: CONSTRUCTION - Unit 3 Build and Test — automated portion complete and passing; rules tests + E2E documented but not executed; awaiting user approval
 
 ---
+
+## Build and Test — Manual Testing Finding (Request Changes, Unit 3)
+**Timestamp**: 2026-07-09T00:00:00Z
+**User Input**: Shared a screenshot from a colleague testing the deployed `dev` branch locally, showing a "Concluída" obra's detail screen with no avaliação section/button visible anywhere; asked whether the avaliação feature was actually on GitHub's `dev` (confirmed yes, via fresh `git fetch`, commit `a58c513`). Then pointed out: "Mas no print é uma obra concluída, deveria ter uma forma de avaliar não só pela notificação, pois nesse caso parece ser uma obra já concluída anteriormente."
+**AI Response**: Confirmed the finding by reading `renderDetalheObra` — it had no avaliação UI at all; the only entry point was the notification row (`obra_concluida` type, `podeAvaliar` gate), which isn't guaranteed to be visible/findable (obra completed before this feature shipped, or notification no longer in the feed). This directly revisits Functional Design's Q7 (Requirements Analysis, answered A — "same trigger as today, notification-only" — declining the persistent-access-point Option B). Fixed `cliente/app.js`'s `renderDetalheObra`: added the same "Avaliar serviço" button / submitted-breakdown display directly to the obra detail screen's header card, gated on the identical `o.status === 'concluida' && !o.avaliacaoCriterios` condition — confirmed via `obraAtiva`'s existing `escutarObras`-driven re-render that the button disappears live after submission, no extra wiring needed. Re-ran `npm test`: 27/27 passing, no regression. Updated `functional-design/frontend-components.md` and `business-rules.md` with `[CORRECTED 2026-07-09]` markers, `code/summary.md`'s "Post-Deploy Correction" section, and `e2e-test-instructions.md`'s step 3.
+**Context**: CONSTRUCTION - Unit 3 Build and Test — correction applied and verified; awaiting user approval to commit/push
+
+---
