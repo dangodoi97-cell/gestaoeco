@@ -158,7 +158,20 @@
   <div class="modal">
     <div class="modal-handle"></div>
     <div class="modal-title">Avaliar serviço</div>
-    <div style="display:flex;justify-content:center;gap:6px;margin:14px 0" id="avaliacao-estrelas"></div>
+    <div id="avaliacao-parceiro-label" data-testid="avaliacao-parceiro-label" style="font-size:13px;color:var(--text-muted);margin-bottom:10px"></div>
+    <div class="mb">
+      <label>Tempo de execução</label>
+      <div style="display:flex;justify-content:center;gap:6px;margin:6px 0" id="avaliacao-estrelas-tempoExecucao" data-testid="avaliacao-estrelas-tempo"></div>
+    </div>
+    <div class="mb">
+      <label>Acabamento</label>
+      <div style="display:flex;justify-content:center;gap:6px;margin:6px 0" id="avaliacao-estrelas-acabamento" data-testid="avaliacao-estrelas-acabamento"></div>
+    </div>
+    <div class="mb">
+      <label>Organização e limpeza</label>
+      <div style="display:flex;justify-content:center;gap:6px;margin:6px 0" id="avaliacao-estrelas-organizacaoLimpeza" data-testid="avaliacao-estrelas-organizacao"></div>
+    </div>
+    <div id="avaliacao-geral-preview" data-testid="avaliacao-geral-preview" style="text-align:center;font-size:13px;font-weight:600;margin:10px 0"></div>
     <div class="mb"><label>Comentário (opcional)</label>
       <textarea id="avaliacao-comentario" rows="3" placeholder="Conte como foi sua experiência..."></textarea>
     </div>

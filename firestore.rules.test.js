@@ -105,6 +105,77 @@ test('achado #2: admin pode ler etapas de qualquer obra', async () => {
   await assertSucceeds(getDoc(doc(db, 'obras', 'obraH', 'etapas', 'etapa1')));
 });
 
+// ---------- Avaliação por critérios vinculada ao parceiro (Unidade 3) ----------
+
+const avaliacaoValida = {
+  avaliacaoCriterios: { tempoExecucao: 5, acabamento: 5, organizacaoLimpeza: 5 },
+  avaliacaoGeral: 5,
+  avaliacaoParceiros: [{ parceiroId: 'p1', nome: 'Benedito' }],
+  avaliacaoComentario: 'Ótimo serviço',
+  avaliadoEm: '2026-07-08',
+};
+
+test('avaliação: cliente pode avaliar a própria obra com os 3 critérios', async () => {
+  await seed(async (db) => {
+    await setDoc(doc(db, 'usuarios', 'clienteD'), { tipo: 'cliente', status: 'aprovado', nome: 'D' });
+    await setDoc(doc(db, 'obras', 'obraD'), { nome: 'Obra do D', clienteId: 'clienteD', status: 'concluida' });
+  });
+  const db = testEnv.authenticatedContext('clienteD').firestore();
+  await assertSucceeds(updateDoc(doc(db, 'obras', 'obraD'), avaliacaoValida));
+});
+
+test('avaliação: cliente não pode enviar uma segunda avaliação (trava de envio único)', async () => {
+  await seed(async (db) => {
+    await setDoc(doc(db, 'usuarios', 'clienteE'), { tipo: 'cliente', status: 'aprovado', nome: 'E' });
+    await setDoc(doc(db, 'obras', 'obraE'), { nome: 'Obra do E', clienteId: 'clienteE', status: 'concluida', ...avaliacaoValida });
+  });
+  const db = testEnv.authenticatedContext('clienteE').firestore();
+  await assertFails(updateDoc(doc(db, 'obras', 'obraE'), { avaliacaoComentario: 'Tentando reenviar' }));
+});
+
+test('avaliação: critério fora da faixa 1-5 é rejeitado', async () => {
+  await seed(async (db) => {
+    await setDoc(doc(db, 'usuarios', 'clienteF'), { tipo: 'cliente', status: 'aprovado', nome: 'F' });
+    await setDoc(doc(db, 'obras', 'obraF'), { nome: 'Obra do F', clienteId: 'clienteF', status: 'concluida' });
+  });
+  const db = testEnv.authenticatedContext('clienteF').firestore();
+  await assertFails(updateDoc(doc(db, 'obras', 'obraF'), {
+    ...avaliacaoValida,
+    avaliacaoCriterios: { tempoExecucao: 6, acabamento: 5, organizacaoLimpeza: 5 },
+  }));
+});
+
+test('avaliação: critério não-inteiro é rejeitado', async () => {
+  await seed(async (db) => {
+    await setDoc(doc(db, 'usuarios', 'clienteG'), { tipo: 'cliente', status: 'aprovado', nome: 'G' });
+    await setDoc(doc(db, 'obras', 'obraG'), { nome: 'Obra do G', clienteId: 'clienteG', status: 'concluida' });
+  });
+  const db = testEnv.authenticatedContext('clienteG').firestore();
+  await assertFails(updateDoc(doc(db, 'obras', 'obraG'), {
+    ...avaliacaoValida,
+    avaliacaoCriterios: { tempoExecucao: 4.5, acabamento: 5, organizacaoLimpeza: 5 },
+  }));
+});
+
+test('avaliação: campo antigo avaliacaoNota não é mais aceito', async () => {
+  await seed(async (db) => {
+    await setDoc(doc(db, 'usuarios', 'clienteI'), { tipo: 'cliente', status: 'aprovado', nome: 'I' });
+    await setDoc(doc(db, 'obras', 'obraI'), { nome: 'Obra do I', clienteId: 'clienteI', status: 'concluida' });
+  });
+  const db = testEnv.authenticatedContext('clienteI').firestore();
+  await assertFails(updateDoc(doc(db, 'obras', 'obraI'), { avaliacaoNota: 5, avaliacaoComentario: '', avaliadoEm: '2026-07-08' }));
+});
+
+test('avaliação: cliente não pode avaliar a obra de outro cliente', async () => {
+  await seed(async (db) => {
+    await setDoc(doc(db, 'usuarios', 'clienteJ'), { tipo: 'cliente', status: 'aprovado', nome: 'J' });
+    await setDoc(doc(db, 'usuarios', 'clienteK'), { tipo: 'cliente', status: 'aprovado', nome: 'K' });
+    await setDoc(doc(db, 'obras', 'obraJ'), { nome: 'Obra do J', clienteId: 'clienteJ', status: 'concluida' });
+  });
+  const db = testEnv.authenticatedContext('clienteK').firestore();
+  await assertFails(updateDoc(doc(db, 'obras', 'obraJ'), avaliacaoValida));
+});
+
 // ---------- Notificações: novo formato bidirecional ----------
 
 test('notificacoes: cliente pode criar notificação admin-facing com tipo permitido', async () => {

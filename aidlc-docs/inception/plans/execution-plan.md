@@ -140,3 +140,111 @@ flowchart TD
 - **Key Deliverables**: Fechamento de Caixa view with color-coded financials (Unit 1); working push notifications in both directions with an expanded event set, backed by a new Cloud Functions service (Unit 2); rewritten `firestore.rules` that block self-promotion and cross-tenant `etapas` reads.
 - **Quality Gates**: Manual verification that a non-admin account cannot write `tipo:'admin'` to its own `usuarios` doc; manual verification that a client account cannot read another client's `etapas`; push notification received end-to-end on at least one real device/browser for both an admin-facing and a cliente-facing event.
 - **Integration Testing**: Confirm Unit 1's Fechamento de Caixa numbers reconcile with the existing obra-detail financial figures; confirm Unit 2's new rules don't break any existing, legitimate read/write path used by either panel.
+
+---
+
+# Unit 3 — Avaliação por Critérios vinculada ao Parceiro (FR-4)
+
+**Added**: 2026-07-08, as a new request on top of the (still Build-and-Test-pending-approval) Units 1 & 2. Independent of both — no shared code paths beyond `firestore.rules` and the general obra/parceiro domain.
+
+## Detailed Analysis Summary
+
+### Transformation Scope (Brownfield)
+- **Transformation Type**: Single component change — extends the existing obra/parceiro domain inside the current admin and cliente panels; no new service, no new infrastructure.
+- **Primary Changes**: Replace the obra's single 1-5 star rating with a 3-criteria rating (Tempo de execução, Acabamento, Organização e limpeza) plus an auto-computed overall average; attribute that rating to every distinct parceiro linked via the obra's completed etapas; display each parceiro's accumulated (running-average) rating on their admin detail screen; expose the parceiro's name to the client at rating time.
+- **Related Components**: `cliente/app.js` (`abrirAvaliacao`/`renderEstrelasAvaliacao`/`selecionarEstrela`/`enviarAvaliacaoObra`), `js/data.js` (`enviarAvaliacao`), `firestore.rules` (`match /obras/{obraId}` update rule), `admin/app.js` (`renderParceiroDetalhe`).
+
+### Change Impact Assessment
+- **User-facing changes**: Yes — client's rating form changes shape (3 star rows instead of 1, parceiro name now shown); admin's parceiro detail screen gains a new accumulated-rating section.
+- **Structural changes**: No — no new component/service boundary, stays within the existing client-only architecture.
+- **Data model changes**: Yes — obra's rating fields change shape (3 criteria replacing the single `avaliacaoNota`); **open question for Functional Design**: what happens to obras that already have a legacy `avaliacaoNota` value from before this change ships (migrate, ignore, or backfill as "Geral" with no per-criteria breakdown)?
+- **API changes**: None — no new Cloud Functions.
+- **NFR impact**: Yes — Security Baseline is concretely applicable: `firestore.rules` gets rewritten again (third rewrite this project, after Unit 2's two), and the client's read scope over parceiro data changes (name-only exposure needs a deliberate, narrow rule — not a blanket `parceiros` read grant to `souClienteAprovado()`).
+
+### Component Relationships
+- **Primary Components**: `cliente/app.js`, `js/data.js`, `admin/app.js` (parceiro detail rendering only — not the broader financial/etapa logic)
+- **Dependent Components**: `firestore.rules` — same file Unit 2 already touches; if Unit 2 hasn't shipped yet, sequencing/merge conflicts between the two rules changes must be handled (see Package Change Sequence)
+- **Supporting Components**: None new
+
+### Risk Assessment
+- **Risk Level**: **Low-Medium** — no new infrastructure or backend component (unlike Unit 2), but it does touch live security rules and a user-facing flow with existing production data (obras that already carry a legacy `avaliacaoNota`), and introduces a new, narrower data-exposure path to the client (parceiro name) that must be verified not to leak more than intended.
+- **Rollback Complexity**: Easy — client code and rules can be reverted independently of Units 1/2.
+
+## Workflow Visualization
+
+```mermaid
+flowchart TD
+    Start(["New Request: Avaliação por Parceiro"])
+
+    subgraph INCEPTION["🔵 INCEPTION PHASE"]
+        RA3["Requirements Analysis<br/><b>COMPLETED</b>"]
+        US3["User Stories<br/><b>SKIPPED (user override)</b>"]
+        WP3["Workflow Planning<br/><b>IN PROGRESS</b>"]
+        AD3["Application Design<br/><b>SKIP</b>"]
+        UG3["Units Generation<br/><b>SKIP</b>"]
+    end
+
+    subgraph CONSTRUCTION["🟢 CONSTRUCTION PHASE"]
+        FD3["Functional Design<br/><b>EXECUTE</b>"]
+        NFRA3["NFR Requirements<br/><b>EXECUTE</b>"]
+        NFRD3["NFR Design<br/><b>EXECUTE</b>"]
+        ID3["Infrastructure Design<br/><b>SKIP</b>"]
+        CG3["Code Generation<br/><b>EXECUTE</b>"]
+        BT3["Build and Test<br/><b>EXECUTE</b>"]
+    end
+
+    Start --> RA3 --> US3 --> WP3 --> AD3 --> UG3
+    UG3 --> FD3 --> NFRA3 --> NFRD3 --> ID3 --> CG3 --> BT3
+    BT3 --> End(["Complete"])
+
+    style RA3 fill:#4CAF50,stroke:#1B5E20,stroke-width:3px,color:#fff
+    style US3 fill:#BDBDBD,stroke:#424242,stroke-width:2px,stroke-dasharray: 5 5,color:#000
+    style WP3 fill:#4CAF50,stroke:#1B5E20,stroke-width:3px,color:#fff
+    style AD3 fill:#BDBDBD,stroke:#424242,stroke-width:2px,stroke-dasharray: 5 5,color:#000
+    style UG3 fill:#BDBDBD,stroke:#424242,stroke-width:2px,stroke-dasharray: 5 5,color:#000
+    style FD3 fill:#FFA726,stroke:#E65100,stroke-width:3px,stroke-dasharray: 5 5,color:#000
+    style NFRA3 fill:#FFA726,stroke:#E65100,stroke-width:3px,stroke-dasharray: 5 5,color:#000
+    style NFRD3 fill:#FFA726,stroke:#E65100,stroke-width:3px,stroke-dasharray: 5 5,color:#000
+    style ID3 fill:#BDBDBD,stroke:#424242,stroke-width:2px,stroke-dasharray: 5 5,color:#000
+    style CG3 fill:#4CAF50,stroke:#1B5E20,stroke-width:3px,color:#fff
+    style BT3 fill:#4CAF50,stroke:#1B5E20,stroke-width:3px,color:#fff
+    style Start fill:#CE93D8,stroke:#6A1B9A,stroke-width:3px,color:#000
+    style End fill:#CE93D8,stroke:#6A1B9A,stroke-width:3px,color:#000
+    style INCEPTION fill:#BBDEFB,stroke:#1565C0,stroke-width:3px,color:#000
+    style CONSTRUCTION fill:#C8E6C9,stroke:#2E7D32,stroke-width:3px,color:#000
+
+    linkStyle default stroke:#333,stroke-width:2px
+```
+
+## Phases to Execute
+
+### 🔵 INCEPTION PHASE
+- [x] Requirements Analysis (COMPLETED — FR-4 in requirements.md)
+- [x] User Stories (SKIPPED — user override, same as Units 1/2)
+- [x] Workflow Planning (IN PROGRESS — this document)
+- [ ] Application Design — **SKIP**
+  - **Rationale**: No new component or service; extends the existing obra/parceiro domain already fully defined. Same rationale as Unit 1.
+- [ ] Units Generation — **SKIP**
+  - **Rationale**: The request is already a single, atomic unit of work (Unit 3) — no decomposition needed.
+
+### 🟢 CONSTRUCTION PHASE
+
+**Unit 3 — Avaliação por Critérios vinculada ao Parceiro (FR-4)**
+- [ ] Functional Design — **EXECUTE** — *Rationale*: needs precise business-rule definition for the accumulation/averaging logic, multi-parceiro attribution (FR-4.6's "concluído" filter assumption to confirm), and the legacy-`avaliacaoNota` migration question flagged above. Also where PBT-01 testable-property identification happens for the new averaging logic (PBT extension enabled project-wide).
+- [ ] NFR Requirements — **EXECUTE** — *Rationale*: Security Baseline is concretely applicable — this is a new, narrower client-facing data exposure (parceiro name) and a third rewrite of `firestore.rules`; SECURITY-08 (server/rules-side re-verification of access) applies directly.
+- [ ] NFR Design — **EXECUTE** — *Rationale*: incorporate the chosen name-exposure pattern (e.g., denormalized `parceiroNome` field vs. a narrow rules grant) into the logical design before code generation.
+- [ ] Infrastructure Design — **SKIP** — *Rationale*: no new infrastructure; pure Firestore fields/rules + static client code, same rationale as Unit 1.
+- [ ] Code Generation — **EXECUTE (ALWAYS)**
+- [ ] Build and Test — **EXECUTE (ALWAYS)**
+  - **Rationale**: Independent of the Units 1/2 Build and Test (still pending approval) — this unit's tests (accumulation/averaging PBT properties, rules test for the new name-exposure grant) can run on their own.
+
+## Package Change Sequence (Unit 3)
+1. **`firestore.rules` change first, in isolation** — same convention as Unit 2: verify the new obra-update shape and the narrow parceiro-name exposure grant before wiring up the UI.
+2. **Functional Design → Code Generation** for the client rating form (`cliente/app.js`) and the parceiro detail accumulation display (`admin/app.js`).
+3. **Coordination note**: if Units 1/2 have not yet been approved/deployed when this unit ships, both touch `firestore.rules` — resolve as a normal sequential edit to the same file (not a parallel-deploy conflict), same as how Units 1 and 2 already coexist in one rules file today.
+
+## Success Criteria (Unit 3)
+- **Primary Goal**: Ship FR-4 without regressing the existing obra-rating flow's reliability (one-shot, no re-submission) or any existing parceiro-detail financial figures.
+- **Key Deliverables**: 3-criteria client rating form with auto-averaged "Avaliação Geral"; accumulated per-parceiro average (per criterion + Geral) on the parceiro detail screen; parceiro name visible to the client at rating time, without broader `parceiros` collection exposure.
+- **Quality Gates**: Manual verification that a client cannot read any `parceiros` field beyond the intended name exposure; verification that an obra linked to 2+ distinct parceiros correctly credits the full rating to each; verification that the accumulated average recomputes correctly as new ratings arrive (PBT-backed).
+- **Integration Testing**: Confirm `renderParceiroDetalhe`'s existing financial totals (`totalDevido`, payment history) are unaffected by the new rating section added to the same screen.

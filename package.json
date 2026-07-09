@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test js/fechamento.test.js",
+    "test": "node --test js/fechamento.test.js js/avaliacao.test.js",
     "test:rules": "firebase emulators:exec --only firestore \"node --test firestore.rules.test.js\""
   },
   "devDependencies": {

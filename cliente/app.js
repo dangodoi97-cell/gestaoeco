@@ -16,6 +16,7 @@ import {
   hoje, diasDiff
 } from '../js/data.js';
 import { permissaoNotificacao, ativarNotificacoes, removerTokenAtual, onForegroundMessage, handleNotificationOpen } from '../js/notifications.js';
+import { mediaCriterios, parceirosCreditados } from '../js/avaliacao.js';
 
 let usuarioAtual = null;
 
@@ -77,7 +78,7 @@ let pagFotoCliente = null;
 let pagObraId = null;
 let cobAtiva = null; // id da solicitação sendo editada
 let orcamentoAtivo = null; // orçamento sendo decidido no modal
-let avaliacaoObraId = null, avaliacaoNotaAtual = 0;
+let avaliacaoObraId = null, avaliacaoNotas = { tempoExecucao: 0, acabamento: 0, organizacaoLimpeza: 0 }, avaliacaoParceirosAtual = [];
 
 function iniciarApp() {
   escutarObras(obras => {
@@ -493,25 +494,40 @@ window.rejeitarOrcamentoAtivo = async function() {
 };
 
 // ---------- AVALIAÇÃO ----------
+const CRITERIOS_AVALIACAO = ['tempoExecucao', 'acabamento', 'organizacaoLimpeza'];
 window.abrirAvaliacao = function(obraId) {
-  avaliacaoObraId = obraId; avaliacaoNotaAtual = 0;
+  avaliacaoObraId = obraId;
+  avaliacaoNotas = { tempoExecucao: 0, acabamento: 0, organizacaoLimpeza: 0 };
   document.getElementById('avaliacao-comentario').value = '';
+  const todas = window._todasEtapas || [];
+  avaliacaoParceirosAtual = parceirosCreditados(todas, obraId);
+  const label = document.getElementById('avaliacao-parceiro-label');
+  label.textContent = avaliacaoParceirosAtual.length
+    ? `Serviço executado por: ${avaliacaoParceirosAtual.map(p => p.nome).filter(Boolean).join(', ')}`
+    : '';
   renderEstrelasAvaliacao();
   document.getElementById('modal-avaliacao').classList.add('show');
 };
 function renderEstrelasAvaliacao() {
-  const el = document.getElementById('avaliacao-estrelas');
-  el.innerHTML = [1,2,3,4,5].map(n => `<i class="ti ${n<=avaliacaoNotaAtual?'ti-star-filled':'ti-star'}" style="font-size:32px;color:#f59e0b;cursor:pointer" onclick="selecionarEstrela(${n})"></i>`).join('');
+  CRITERIOS_AVALIACAO.forEach(criterio => {
+    const el = document.getElementById(`avaliacao-estrelas-${criterio}`);
+    const nota = avaliacaoNotas[criterio];
+    el.innerHTML = [1,2,3,4,5].map(n => `<i class="ti ${n<=nota?'ti-star-filled':'ti-star'}" style="font-size:28px;color:#f59e0b;cursor:pointer" onclick="selecionarEstrela('${criterio}',${n})"></i>`).join('');
+  });
+  const preview = document.getElementById('avaliacao-geral-preview');
+  const completo = CRITERIOS_AVALIACAO.every(c => avaliacaoNotas[c] >= 1);
+  preview.textContent = completo ? `Avaliação Geral: ${mediaCriterios(avaliacaoNotas)}/5` : '';
 }
-window.selecionarEstrela = function(n) { avaliacaoNotaAtual = n; renderEstrelasAvaliacao(); };
+window.selecionarEstrela = function(criterio, n) { avaliacaoNotas[criterio] = n; renderEstrelasAvaliacao(); };
 window.enviarAvaliacaoObra = async function() {
-  if (!avaliacaoNotaAtual) { toast('Selecione uma nota de 1 a 5 estrelas'); return; }
+  if (CRITERIOS_AVALIACAO.some(c => !avaliacaoNotas[c])) { toast('Selecione uma nota para todos os critérios'); return; }
   const comentario = document.getElementById('avaliacao-comentario').value.trim();
-  await enviarAvaliacao(avaliacaoObraId, avaliacaoNotaAtual, comentario);
+  const avaliacaoGeral = mediaCriterios(avaliacaoNotas);
+  await enviarAvaliacao(avaliacaoObraId, avaliacaoNotas, avaliacaoGeral, avaliacaoParceirosAtual, comentario);
   const obra = db_obras.find(o => o.id === avaliacaoObraId);
   criarNotificacao({
     destinatarioTipo: 'admin', tipo: 'avaliacao_registrada', titulo: `Nova avaliação de ${usuarioAtual.nome || 'cliente'}`,
-    mensagem: `${usuarioAtual.nome || 'Um cliente'} avaliou a obra "${obra?.nome || ''}" com ${avaliacaoNotaAtual} estrela${avaliacaoNotaAtual>1?'s':''}.`,
+    mensagem: `${usuarioAtual.nome || 'Um cliente'} avaliou a obra "${obra?.nome || ''}" com nota geral ${avaliacaoGeral}/5.`,
     linkPagina: 'obras', linkId: avaliacaoObraId, lida: false
   });
   document.getElementById('modal-avaliacao').classList.remove('show');
@@ -803,7 +819,7 @@ function renderAprovacao() {
     </div>`;
     html += rowsNotificacoes.map(n => {
       const obra = db_obras.find(o => o.id === n.obraId);
-      const podeAvaliar = n.tipo === 'obra_concluida' && obra && !obra.avaliacaoNota;
+      const podeAvaliar = n.tipo === 'obra_concluida' && obra && !obra.avaliacaoCriterios;
       return `<div class="etapa-card" style="margin-bottom:8px;${n.lida?'opacity:.7;':''}background:${n.lida?'var(--surface-1)':'var(--surface-2)'}" onclick="marcarNotifLida('${n.id}')">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
           <div style="flex:1;min-width:0">
@@ -814,7 +830,7 @@ function renderAprovacao() {
           ${!n.lida ? `<span style="width:8px;height:8px;border-radius:50%;background:#3b82f6;flex-shrink:0;margin-top:4px"></span>` : ''}
         </div>
         ${podeAvaliar ? `<button class="btn-brand" style="margin-top:10px" onclick="event.stopPropagation();abrirAvaliacao('${obra.id}')"><i class="ti ti-star"></i> Avaliar serviço</button>` : ''}
-        ${n.tipo === 'obra_concluida' && obra && obra.avaliacaoNota ? `<div style="font-size:12px;color:var(--text-success);margin-top:8px"><i class="ti ti-star-filled"></i> Você avaliou com ${obra.avaliacaoNota} estrela${obra.avaliacaoNota>1?'s':''}</div>` : ''}
+        ${n.tipo === 'obra_concluida' && obra && obra.avaliacaoCriterios ? `<div style="font-size:12px;color:var(--text-success);margin-top:8px"><i class="ti ti-star-filled"></i> Tempo de execução: ${obra.avaliacaoCriterios.tempoExecucao}/5 · Acabamento: ${obra.avaliacaoCriterios.acabamento}/5 · Organização e limpeza: ${obra.avaliacaoCriterios.organizacaoLimpeza}/5 · Geral: ${obra.avaliacaoGeral}/5</div>` : ''}
       </div>`;
     }).join('');
   }

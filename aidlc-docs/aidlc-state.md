@@ -93,5 +93,57 @@
 | Security Baseline | Yes | Requirements Analysis (2026-07-06) — first concretely applicable at Unit 2 NFR Requirements |
 | Property-Based Testing | Yes (full enforcement) | Requirements Analysis (2026-07-06) — first concretely applicable at Unit 1 & Unit 2 Functional Design |
 
+## 🔵 NEW REQUEST — Unit 3 candidate (Avaliação por Critérios vinculada ao Parceiro)
+- [x] Requirements Analysis - Clarifying questions created on 2026-07-08T00:00:00Z
+  - **Trigger**: New feature request — cliente avalia serviço concluído por critérios (5 estrelas cada: tempo de execução, acabamento, organização e limpeza), vinculado ao parceiro executor, com nota acumulada serviço a serviço
+  - **Questions File**: aidlc-docs/inception/requirements/unit3-avaliacao-parceiro-questions.md (answered in chat, mobile constraint; answers transcribed into the file)
+- [x] Requirements Analysis - Answers received on 2026-07-08T00:00:00Z; requirements.md updated (FR-4)
+  - **Requirements Doc**: aidlc-docs/inception/requirements/requirements.md (FR-4)
+  - **Key decisions**: obra-level rating (not per-etapa), 3 fixed criteria, auto-averaged Geral (with per-criterion visibility kept), full replacement of old `avaliacaoNota` field, same full rating applied to every distinct parceiro linked via completed etapas (no proportional split), accumulated as a running average computed on read (not stored incrementally), shown only on parceiro detail screen, client now sees parceiro name (flagged data-exposure decision for Functional Design)
+- [x] Requirements Analysis - **Approved on 2026-07-08T00:00:00Z** (user also explicitly declined User Stories again)
+- [x] User Stories - Skipped on 2026-07-08T00:00:00Z (user override, consistent with Units 1/2)
+- [x] Workflow Planning - Completed on 2026-07-08T00:00:00Z, scoped to Unit 3
+  - **Execution Plan**: aidlc-docs/inception/plans/execution-plan.md (Unit 3 section, appended)
+  - **Decisions**: Application Design SKIP, Units Generation SKIP (already a single atomic unit), Functional Design EXECUTE, NFR Requirements EXECUTE, NFR Design EXECUTE, Infrastructure Design SKIP, Code Generation EXECUTE, Build and Test EXECUTE (independent of Units 1/2's pending Build and Test)
+- [x] Workflow Planning - **Approved on 2026-07-08T00:00:00Z**
+
+### Unit 3 — Avaliação por Critérios vinculada ao Parceiro
+- [x] Functional Design - Plan created and answered on 2026-07-08T00:00:00Z
+  - **Plan**: aidlc-docs/construction/plans/unit3-avaliacao-parceiro-functional-design-plan.md
+- [x] Functional Design - Artifacts generated on 2026-07-08T00:00:00Z
+  - **Artifacts**: aidlc-docs/construction/unit3-avaliacao-parceiro/functional-design/
+  - **Key finding**: parceiro name exposure (FR-4.9) needs zero `firestore.rules` changes — client already reads it via existing `etapas` access (Unit 2). Also surfaced a pre-existing, out-of-scope exposure: `etapas.parceiros[].repasse` is already readable by the client today.
+  - **Flagged for NFR**: `avaliacaoParceiros` attribution has no rules-side cross-check (client-computed, trusted); one-shot lock is UI-only today, no `!('avaliacaoCriterios' in resource.data)` rule guard yet.
+- [x] Functional Design - **Approved on 2026-07-08T00:00:00Z**
+- [x] NFR Requirements - Answered and artifacts generated on 2026-07-08T00:00:00Z
+  - **Plan**: aidlc-docs/construction/plans/unit3-avaliacao-parceiro-nfr-requirements-plan.md
+  - **Artifacts**: aidlc-docs/construction/unit3-avaliacao-parceiro/nfr-requirements/
+  - **Key decisions**: rules-layer one-shot guard added (Q1=A); parceiro-attribution cross-check NOT implemented, accepted risk (Q2=A) — 6 Compliant, 7 N/A, 1 accepted gap (SECURITY-11)
+- [x] NFR Requirements - **Approved on 2026-07-08T00:00:00Z**
+- [x] NFR Design - Completed on 2026-07-08T00:00:00Z (no open questions — all categories settled by NFR Requirements)
+  - **Artifacts**: aidlc-docs/construction/unit3-avaliacao-parceiro/nfr-design/
+- [x] NFR Design - **Approved on 2026-07-08T00:00:00Z**
+- [ ] Infrastructure Design - SKIPPED (per execution-plan.md, confirmed again on approval)
+- [ ] Code Generation (Part 1 - Planning) - Plan created on 2026-07-08T00:00:00Z
+  - **Plan**: aidlc-docs/construction/plans/unit3-avaliacao-parceiro-code-generation-plan.md
+- [x] Code Generation (Part 1 - Planning) - **Approved on 2026-07-08T00:00:00Z**
+- [x] Code Generation (Part 2 - Generation) - Completed on 2026-07-08T00:00:00Z
+  - **Artifacts**: aidlc-docs/construction/unit3-avaliacao-parceiro/code/summary.md
+  - **Created**: js/avaliacao.js, js/avaliacao.test.js
+  - **Modified**: firestore.rules, firestore.rules.test.js, js/data.js, cliente/index.html, cliente/app.js, admin/app.js, package.json
+  - **Tests**: 27/27 passing (`npm test`); 6 new rules tests written but not executed (Java/emulator unavailable this session)
+- [x] Code Generation - **Approved on 2026-07-08T00:00:00Z**
+- [x] Build and Test - Completed on 2026-07-08T00:00:00Z (automated portion)
+  - **Artifacts**: aidlc-docs/construction/build-and-test/ (all 6 files extended with Unit 3 sections)
+  - **Automated**: 27/27 unit tests passing, 0 dependency vulnerabilities, integration checks passed by inspection
+  - **Not executed this session**: 18 firestore.rules tests (Java unavailable), 10-step manual E2E script (needs live deployment)
+  - **Status**: ⛔ GATE — awaiting user approval; explicitly flagged as "Not yet ready for Operations" until rules tests + E2E run
+- [ ] NFR Requirements - Pending
+- [ ] NFR Design - Pending
+- [ ] Code Generation - Pending
+- [ ] Build and Test - Pending
+
 ## Current Stage
-CONSTRUCTION - Build and Test complete, awaiting approval before OPERATIONS PHASE (Planning)
+CONSTRUCTION - Unit 3 Build and Test complete (automated portion) — awaiting user approval before OPERATIONS PHASE
+
+**Unrelated, still pending from before**: CONSTRUCTION - Build and Test (Units 1 & 2) complete, awaiting approval before OPERATIONS PHASE

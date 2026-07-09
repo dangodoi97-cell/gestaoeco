@@ -22,7 +22,7 @@ There is no compilation/bundling step for either unit — both are plain JavaScr
 ```bash
 node --check admin/app.js
 node --check cliente/app.js
-node --check js/data.js js/auth.js js/firebase-config.js js/notifications.js js/fechamento.js
+node --check js/data.js js/auth.js js/firebase-config.js js/notifications.js js/fechamento.js js/avaliacao.js
 node --check firebase-messaging-sw.js
 node --check functions/index.js functions/notificationDispatcher.js
 ```

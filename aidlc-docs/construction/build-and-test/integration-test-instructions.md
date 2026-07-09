@@ -26,6 +26,16 @@ Both units share files (`admin/app.js`, `admin/index.html`, `js/data.js`) despit
 - **Description**: Unit 2 extended `criarNotificacao`/`escutarNotificacoes` and added `salvarFcmToken`/`removerFcmToken`. Unit 1 doesn't call any of these.
 - **Verified during this stage**: `node --check js/data.js` passes; `npm test` (Unit 1's suite, which imports nothing from the notification-related exports) still passes 13/13 after Unit 2's edits to the same file.
 
+### Scenario 5: Unit 3's rating fields coexist with Units 1/2 in the same `firestore.rules` file
+- **Description**: Unit 3 is the third sequential edit to the `obras/{obraId}` update rule in this same file (Units 1/2 never touched this specific rule; the rating field was previously untouched by both). No overlapping edit region — verified by reading the current rule after the change (single, non-duplicated `allow update` block).
+- **Verified during this stage**: `firestore.rules` has exactly one `match /obras/{obraId}` block and one `allow update` clause for it; the new `notaValida`/`geralValida` helpers don't collide with any existing helper name (`logado`, `meuPerfil`, `souAdmin`, `souClienteAprovado`, `souProprietarioObra`).
+- **Expected Results**: no duplicate rule blocks, no helper name collisions.
+
+### Scenario 6: Unit 3's `renderAvaliacaoParceiro` doesn't disturb `renderParceiroDetalhe`'s existing sections
+- **Description**: Unit 3 inserts new markup into the same `#parceiro-detalhe-content` element that already renders the header card, financial summary (`#resumo-financeiro-parceiro`), payment history, and notifications.
+- **Test Steps**: as admin, open a parceiro's detail screen (with and without prior avaliações).
+- **Expected Results**: the new avaliação card appears once, right after the header card and before the financial summary; `totalDevido`/payment history/notifications render exactly as before Unit 3 (unaffected — `renderAvaliacaoParceiro` only reads `db_obras`, never writes, and is purely additive to the returned HTML string).
+
 ## Setup Integration Test Environment
 No separate integration environment is needed — both units run against the same static-file + Firebase project setup. For rules-related integration checks, use the Firestore emulator (`npm run test:rules`), which already exercises both units' data model assumptions together (Unit 1's `obras`/`etapas` reads, Unit 2's `usuarios`/`notificacoes` rules) in one rules file.
 

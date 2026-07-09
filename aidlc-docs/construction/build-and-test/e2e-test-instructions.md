@@ -49,5 +49,27 @@ Repeat the equivalent for admin-triggered events (obra criada/concluída, etapa 
 2. Have the admin trigger an event that would normally notify this now-logged-out account.
 3. **Expected**: no push arrives on the logged-out device (token was removed on logout, per Q2=A) — this is hard to verify directly without server-side log access, but at minimum confirm no error is thrown client-side during logout.
 
+## Unit 3: Avaliação por Critérios vinculada ao Parceiro
+
+1. Log in as cliente, on an obra that is `andamento` with at least one `concluido` etapa linked to a parceiro.
+2. Have the admin mark the obra as `concluida`.
+   - **Expected**: cliente receives the `obra_concluida` notification; the notification row shows a "Avaliar serviço" button.
+3. Tap "Avaliar serviço".
+   - **Expected**: modal opens showing "Serviço executado por: {nome do parceiro}" and 3 empty star rows (Tempo de execução, Acabamento, Organização e limpeza) — no "Avaliação Geral" preview yet.
+4. Rate all 3 criteria (e.g. 5, 4, 5).
+   - **Expected**: "Avaliação Geral: 4.7/5" preview appears live as soon as all 3 are filled.
+5. Add a comment, tap "Enviar avaliação".
+   - **Expected**: toast confirms; modal closes; the notification row now shows the 3 criteria + Geral; the "Avaliar serviço" button never reappears for this obra (reload the page to confirm the gate persists).
+6. As admin, open that parceiro's detail screen.
+   - **Expected**: new avaliação card shows this obra's exact values for each criterion + Geral, "1 serviço avaliado".
+7. Repeat steps 1-5 for a second obra crediting the **same** parceiro, with different star values.
+   - **Expected**: the parceiro's detail card now shows the arithmetic mean of both obras' values, "2 serviços avaliados" — not the individual obra's last values.
+8. Find (or create test data for) an obra with **no** parceiro linked to any concluded etapa.
+   - **Expected**: rating modal opens without a parceiro name line; submission still succeeds; that obra never appears in any parceiro's accumulated count.
+9. Find (or create test data for) an obra with **2 distinct parceiros** across its concluded etapas.
+   - **Expected**: the rating modal lists both names (e.g. "Serviço executado por: Benedito, José"); after submission, **both** parceiros' detail screens show this obra counted in full (not split/averaged down).
+10. Attempt to bypass the UI (e.g. via devtools, calling `enviarAvaliacao` again on an already-rated obra, or writing `avaliacaoNota` directly).
+    - **Expected**: rejected by `firestore.rules` (see security-test-instructions.md §4) — confirms the one-shot guard and field removal are enforced server-side, not just hidden in the UI.
+
 ## Reporting
 Record pass/fail for each numbered step in this file (or a copy) when actually executed against a live deployment — this document defines the script; actual execution requires a deployed Firebase project with real devices/browsers, which is outside what this session can perform directly.

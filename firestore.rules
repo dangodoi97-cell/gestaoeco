@@ -11,6 +11,10 @@ service cloud.firestore {
       return souClienteAprovado() &&
         get(/databases/$(database)/documents/obras/$(obraId)).data.clienteId == request.auth.uid;
     }
+    // Nota 1-5, inteira — usada para validar cada um dos 3 critérios da avaliação (Unidade 3).
+    function notaValida(n) { return n is int && n >= 1 && n <= 5; }
+    // Avaliação Geral também aceita valores fracionários (é a média dos 3 critérios).
+    function geralValida(n) { return n is number && n >= 1 && n <= 5; }
 
     match /usuarios/{uid} {
       allow read: if logado() && (request.auth.uid == uid || souAdmin());
@@ -33,7 +37,12 @@ service cloud.firestore {
       allow create, delete: if souAdmin();
       allow update: if souAdmin() ||
         (souClienteAprovado() && resource.data.clienteId == request.auth.uid &&
-         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['avaliacaoNota', 'avaliacaoComentario', 'avaliadoEm']));
+         !('avaliacaoCriterios' in resource.data) &&
+         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['avaliacaoCriterios', 'avaliacaoGeral', 'avaliacaoParceiros', 'avaliacaoComentario', 'avaliadoEm']) &&
+         notaValida(request.resource.data.avaliacaoCriterios.tempoExecucao) &&
+         notaValida(request.resource.data.avaliacaoCriterios.acabamento) &&
+         notaValida(request.resource.data.avaliacaoCriterios.organizacaoLimpeza) &&
+         geralValida(request.resource.data.avaliacaoGeral));
 
       match /etapas/{etapaId} {
         allow read: if souAdmin() || souProprietarioObra(obraId);

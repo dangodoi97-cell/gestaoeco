@@ -426,3 +426,91 @@
 **Context**: CONSTRUCTION - Build and Test — Unit 1 correction verified; awaiting user's continued manual testing
 
 ---
+
+## Requirements Analysis — New Feature Request (Unit 3 candidate: Avaliação por Critérios vinculada ao Parceiro)
+**Timestamp**: 2026-07-08T00:00:00Z
+**User Input**: "Usando aidlc, vou te mandar os requisitos\n\nCara uma coisa que quero por é um avaliação pelo cliente do serviço concluido. Pode ser algo tipo 5 estrelas. \nExemplo:\n Tempo de execução *****\nAcabamento *****\nOrganização e limpeza *****\n\nAi isso estar vinculado diretamente no parceiro cadastrado que foi selecionado para execução daquele serviço:\nExemplo:\n\nBenedito:\nAcabamento 5/5*\nExecução 5/5*\nOrganização e limpeza 5/5*\n\nAvaliação Geral: 5/5\n(Mas essa nota ela sendo acumulada serviço a serviço)"
+**AI Response**: Read current code to ground the request before drafting questions: confirmed `parceiroId`/`parceiros[]` are attached at the **etapa** level (not obra), that a single etapa or obra can have multiple parceiros linked (`parceirosDaEtapa` array), that `renderParceiroDetalhe` (admin/app.js) already builds a per-parceiro `historico` of etapas via that link — the natural place to surface an accumulated rating — and that an existing simple one-shot 1-5 star rating already exists at the **obra** level (`avaliacaoNota`/`avaliacaoComentario`/`avaliadoEm`, gated by `!obra.avaliacaoNota`, triggered from the `obra_concluida` notification in `cliente/app.js`), enforced by `firestore.rules` (`hasOnly(['avaliacaoNota','avaliacaoComentario','avaliadoEm'])`) — with no existing link to parceiro at all today. This creates a real fork (rate per-etapa vs. per-obra; how to attribute when multiple parceiros are linked; replace vs. coexist with the existing obra-level field) that must be resolved before Functional Design. Security Baseline and Property-Based Testing extensions remain enabled (decided project-wide at the first Requirements Analysis) — no new opt-in prompt needed. Creating `unit3-avaliacao-parceiro-questions.md`.
+**Context**: INCEPTION - Requirements Analysis (new cycle, Unit 3 candidate) — creating clarifying questions
+
+---
+
+## Requirements Analysis — Unit 3 Clarifying Questions Answered
+**Timestamp**: 2026-07-08T00:00:00Z
+**User Input**: User was on mobile and couldn't open the questions file to relay it to the business owner; asked for the questions to be pasted in chat instead, then answered directly in chat: "1B 2A 3A 4A mas com possibilidade de ver a nota por critério, 5A 6A 7A 8A 9A 10B"
+**AI Response**: Pasted all 10 questions in chat (deviation from question-format-guide.md's "never ask in chat" rule, justified by the user's stated mobile constraint — the dedicated question file was still created and is the artifact of record). Sent the `.md` question file to the user via file delivery on request (to forward to the business owner) before they answered directly. Checked all 10 answers for contradictions — none found. Filled `[Answer]:` tags in `unit3-avaliacao-parceiro-questions.md` for the audit record. Appended **FR-4** to `requirements.md` (Avaliação por Critérios do Serviço, vinculada ao Parceiro Executor): obra-level rating (not per-etapa), 3 fixed criteria, auto-averaged "Avaliação Geral" with per-criterion visibility preserved, full replacement of the existing single-star obra field, same-rating-to-every-distinct-parceiro attribution (no proportional split), running average (not sum) computed on read rather than stored incrementally, display limited to the parceiro detail screen, and client-facing exposure of the parceiro's name (flagged as a data-exposure change needing a Functional Design/security decision on how the name is surfaced without exposing the full `parceiros` record).
+**Context**: INCEPTION - Requirements Analysis (Unit 3 candidate) — requirements.md updated; awaiting user approval before Workflow Planning
+
+---
+
+## Requirements Analysis (Unit 3) — Approved
+**Timestamp**: 2026-07-08T00:00:00Z
+**User Input**: "Sem user story, aprovado"
+**AI Response**: Recorded approval of requirements.md (FR-4) and the explicit User Stories skip. Proceeded to Workflow Planning for Unit 3: analyzed transformation scope (single-component, no new infra/service), change impact (data model change to obra's rating fields; security-relevant since the client gains a new, narrow read exposure to parceiro name; `firestore.rules` gets a third rewrite), and risk (Low-Medium — no new infra, but touches live security rules and existing production data via the legacy `avaliacaoNota` field, flagged as an open migration question for Functional Design). Decided: Application Design SKIP, Units Generation SKIP (already one atomic unit), Functional Design/NFR Requirements/NFR Design EXECUTE, Infrastructure Design SKIP, Code Generation/Build and Test EXECUTE (ALWAYS). Appended the Unit 3 section (analysis, workflow diagram, phase decisions, package sequence, success criteria) to `execution-plan.md`, keeping Units 1/2's content intact.
+**Context**: INCEPTION - Workflow Planning (Unit 3) — execution-plan.md updated; awaiting user approval before Functional Design
+
+---
+
+## Workflow Planning (Unit 3) — Approved
+**Timestamp**: 2026-07-08T00:00:00Z
+**User Input**: "Aprovar"
+**AI Response**: Recorded approval of the Unit 3 execution plan. Proceeded to Functional Design: analyzed remaining ambiguities in FR-4 not yet resolved by the Requirements Analysis answers — legacy `avaliacaoNota` data handling, confirmation of the "concluído" filter assumption for parceiro attribution, behavior when an obra has zero linked parceiros, whether the parceiro name shown to the client is a frozen snapshot or live-looked-up, and what the client sees when an obra has multiple distinct parceiros. Created `unit3-avaliacao-parceiro-functional-design-plan.md` with 5 questions (following the same mobile-friendly chat-paste pattern as Requirements Analysis, per user's stated constraint).
+**Context**: CONSTRUCTION - Unit 3 Functional Design — creating clarifying questions
+
+---
+
+## Functional Design (Unit 3) — Questions Answered, Artifacts Generated
+**Timestamp**: 2026-07-08T00:00:00Z
+**User Input**: "1A 2A 3A 4A 5A"
+**AI Response**: Recorded all 5 answers (no ambiguity). Key discovery while designing the attribution logic: the parceiro's `nome` needed for FR-4.9 is already denormalized onto `etapas.parceiros[]` entries by existing admin code, and the client already has read access to their own obra's etapas (`souProprietarioObra`, from Unit 2) — so exposing the parceiro name to the client requires **zero** `firestore.rules` changes, just a UI change. Flagged as an aside (not fixed, out of scope): this same existing read access already exposes each etapa's `repasse` (subcontractor payment) to the client today, pre-existing and unrelated to this unit. Also flagged for NFR: `avaliacaoParceiros` attribution is entirely client-computed with no rules-side cross-check against real etapas (a client could in principle credit an uninvolved parceiro), and the one-shot lock is only UI-enforced today (no `!('avaliacaoCriterios' in resource.data)` check in rules) — both carried into NFR Requirements/Design rather than decided here. Generated all 4 functional design artifacts under `aidlc-docs/construction/unit3-avaliacao-parceiro/functional-design/`: `domain-entities.md` (obra field changes: remove `avaliacaoNota`, add `avaliacaoCriterios`/`avaliacaoGeral`/`avaliacaoParceiros`; new computed `ParceiroAvaliacaoAcumulada` view model), `business-logic-model.md` (client submission flow, admin accumulation flow), `business-rules.md` (attribution, name-freezing, legacy-data, one-shot, aggregation-correctness rule sets), `frontend-components.md` (client modal restructure to 3 star rows + parceiro label; new `renderAvaliacaoParceiro` card in admin's `renderParceiroDetalhe`).
+**Context**: CONSTRUCTION - Unit 3 Functional Design — artifacts generated; awaiting user approval before NFR Requirements
+
+---
+
+## Functional Design (Unit 3) — Approved
+**Timestamp**: 2026-07-08T00:00:00Z
+**User Input**: "Continuar"
+**AI Response**: Recorded approval. Proceeded to NFR Requirements: scalability/performance/availability/reliability/maintainability/usability all inherit Unit 2's already-established platform-managed defaults (same Firebase-only architecture, no new infra/dependencies) — no new questions needed there. Created `unit3-avaliacao-parceiro-nfr-requirements-plan.md` with exactly the 2 substantive security questions carried over from Functional Design's flagged findings: (1) whether to add a rules-side one-shot guard (`!('avaliacaoCriterios' in resource.data)`) in addition to the existing UI-only lock, and (2) whether to attempt a rules-side cross-check that a credited parceiro actually worked on the obra, versus accepting the risk (framed with a recommendation, consistent with Unit 2's precedent of explicitly-confirmed accepted gaps rather than silent ones).
+**Context**: CONSTRUCTION - Unit 3 NFR Requirements — creating clarifying questions
+
+---
+
+## NFR Requirements (Unit 3) — Answered, Artifacts Generated
+**Timestamp**: 2026-07-08T00:00:00Z
+**User Input**: "1A 2A"
+**AI Response**: Recorded both answers. Generated `nfr-requirements.md` (full SECURITY-01..15 disposition: 6 Compliant, 7 N/A, 1 explicitly accepted gap under SECURITY-11 — the parceiro-attribution trust issue, framed consistently with Unit 2's precedent of confirmed-not-silent gap acceptance) and `tech-stack-decisions.md` (zero new dependencies; documents the 2 rules-layer additions: one-shot guard and basic range/type validation on the 3 criteria + Geral, both zero-cost `request.resource.data`-only checks). Carried forward 4 PBT candidate properties (bounds, bounded-change-on-add, attribution isolation, submission round-trip) for Code Generation.
+**Context**: CONSTRUCTION - Unit 3 NFR Requirements — artifacts generated; awaiting user approval before NFR Design
+
+---
+
+## NFR Requirements (Unit 3) — Approved; NFR Design Completed
+**Timestamp**: 2026-07-08T00:00:00Z
+**User Input**: "Aprovado"
+**AI Response**: Recorded approval. Evaluated all NFR Design categories (resilience, scalability, performance, security, logical components) — no open questions remained, since NFR Requirements had already settled every substantive decision; documented this in `unit3-avaliacao-parceiro-nfr-design-plan.md` (same "no open questions, proceed directly" pattern as Unit 2) and generated `nfr-design-patterns.md` (In-Memory Aggregation, Rules-Layer Existence Guard, Field-Level Type/Range Validation, Accepted-Risk Boundary patterns, plus N/A categories with rationale) and `logical-components.md` (annotates the rules update condition and the two client/admin computation functions — zero new infrastructure, smallest footprint of the 3 units so far).
+**Context**: CONSTRUCTION - Unit 3 NFR Design — artifacts generated; awaiting user approval before Infrastructure Design (which the execution plan already scoped as SKIP for this unit) / Code Generation
+
+---
+
+## NFR Design (Unit 3) — Approved; Code Generation Plan Created
+**Timestamp**: 2026-07-08T00:00:00Z
+**User Input**: "Pode pular e gerar código,"
+**AI Response**: Recorded approval and confirmation to skip Infrastructure Design (already SKIP per execution-plan.md). Created `unit3-avaliacao-parceiro-code-generation-plan.md`: 9 steps covering a new pure-logic module (`js/avaliacao.js`, mirroring `js/fechamento.js`'s style) with unit tests, `firestore.rules` changes (hasOnly update, one-shot guard, range validation) with new rules tests, and frontend changes across `js/data.js`, `cliente/index.html`, `cliente/app.js`, `admin/app.js`. Zero new dependencies. Presenting plan for approval before generation per code-generation.md's mandatory Part 1→Part 2 gate.
+**Context**: CONSTRUCTION - Unit 3 Code Generation Part 1 (Planning) — plan created; awaiting approval before Part 2 (Generation)
+
+---
+
+## Code Generation (Unit 3) — Plan Approved and Executed
+**Timestamp**: 2026-07-08T00:00:00Z
+**User Input**: "Confirmo"
+**AI Response**: Executed all 9 plan steps. Created `js/avaliacao.js` (`mediaCriterios`, `parceirosCreditados`, `calcularAcumuladoParceiro`) and `js/avaliacao.test.js` (12 tests: 9 example-based + 3 `fast-check` property tests) — ran `npm test`: **27/27 passing** (15 pre-existing + 12 new). Modified `firestore.rules` (obra update rule: new `hasOnly` list, one-shot guard, new `notaValida`/`geralValida` range-check helpers) and extended `firestore.rules.test.js` with 6 new tests (valid submission, one-shot block, out-of-range block, non-integer block, old-field block, cross-client block) — **not executed** (Java/emulator unavailable in this session, same limitation as the earlier merge session; documented for the user to run later). Modified `js/data.js` (`enviarAvaliacao` new signature), `cliente/index.html` (3-criteria modal markup + `data-testid` attributes), `cliente/app.js` (full rewrite of the avaliação flow: attribution computation, 3-criteria state, live Geral preview, updated notification gate/display text), and `admin/app.js` (new `renderAvaliacaoParceiro`, wired into `renderParceiroDetalhe`). Caught and fixed one self-inflicted duplication bug during the `admin/app.js` edit (an Edit call's old/new string overlap duplicated the "Excluir" button markup) before it reached the user. Verified `node --check` syntax on every modified `.js` file. Generated `code/summary.md` with full created/modified file list and test-run instructions. Marked all 9 plan steps `[x]`.
+**Context**: CONSTRUCTION - Unit 3 Code Generation — complete; awaiting user approval before Build and Test
+
+---
+
+## Build and Test (Unit 3)
+**Timestamp**: 2026-07-08T00:00:00Z
+**User Input**: "Continuar"
+**AI Response**: Re-verified `node --check` on all 5 new/modified JS files (pass) and re-ran `npm test` (27/27 passing). Re-attempted `npm run test:rules` — still blocked by missing Java (documented, not resolved this session). Ran `npm audit --omit=dev` — 0 vulnerabilities. Verified by direct file inspection (Integration Scenario 5) that `firestore.rules` has exactly one `match /obras/{obraId}` block, one `allow update` clause for it, and no helper-function name collisions between Unit 3's new `notaValida`/`geralValida` and the existing `logado`/`meuPerfil`/`souAdmin`/`souClienteAprovado`/`souProprietarioObra`. Extended all 6 build-and-test artifacts with a Unit 3 section: `build-instructions.md` (added `js/avaliacao.js` to the check list), `unit-test-instructions.md` (updated counts/commands), `integration-test-instructions.md` (2 new scenarios), `security-test-instructions.md` (§4, documents the 6 new rules tests and the still-pending execution + the accepted attribution-trust gap), `e2e-test-instructions.md` (10-step manual script), `performance-test-instructions.md` (1-line addition), and `build-and-test-summary.md` (full Unit 3 section, explicit "Not yet ready for Operations" status pending the rules-test run and live E2E).
+**Context**: CONSTRUCTION - Unit 3 Build and Test — automated portion complete and passing; rules tests + E2E documented but not executed; awaiting user approval
+
+---

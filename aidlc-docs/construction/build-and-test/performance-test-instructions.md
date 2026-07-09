@@ -10,5 +10,7 @@ Per NFR Requirements (both units), this project has no performance target that w
 - **Unit 1's known performance risk** (reverse-engineering finding #12/#13 — listener churn, unbounded queries) was explicitly designed against: business-logic-model.md confirms no new Firestore listeners are added, reusing already-subscribed data.
 - **Unit 2's dispatch function** has no loop over an unbounded collection — `resolveRecipients('admin')` queries `usuarios` filtered by `tipo=='admin'`, bounded by however many admin accounts exist (expected: 1-3 for this business), not by client/obra volume.
 
+- **Unit 3**: same "in-memory, no new listeners" pattern as Unit 1 (`nfr-requirements.md`'s Performance section) — `parceirosCreditados`/`calcularAcumuladoParceiro` both run over already-loaded `window._todasEtapas`/`db_obras`, O(number of obras/etapas) per call, negligible at this app's scale.
+
 ## If This Ever Needs Revisiting
 Should this app's usage grow substantially (many admins, high notification volume), re-run NFR Requirements for a new unit to set actual targets before introducing load-testing tooling — premature performance tooling for a project this size would be disproportionate effort (per this project's consistent "proportionate to scale" decisions throughout Unit 2's NFR stages).

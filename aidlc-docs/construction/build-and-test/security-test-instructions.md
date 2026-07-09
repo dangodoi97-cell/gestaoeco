@@ -44,5 +44,20 @@ npm audit --omit=dev          # root: 0 vulnerabilities (verified during Code Ge
 ```
 Re-run before every deploy; if `firebase-admin` ships an update resolving the transitive `retry-request`/`teeny-request` advisories, take it via a normal `npm update` rather than `--force`.
 
-## 4. Storage Rules — Explicitly Out of Scope, Not Re-Tested
+## 4. Unit 3 — Avaliação Rules (written this stage, **not yet executed** — Java/Firestore emulator unavailable in this session)
+
+### What the 6 New Tests Cover (`firestore.rules.test.js`, added during Unit 3 Code Generation)
+- Client can submit a valid 3-criteria rating on their own obra
+- Client **cannot** submit a second rating once `avaliacaoCriterios` already exists (one-shot guard, NFR Requirements Q1=A)
+- Client **cannot** submit a criterion outside 1-5, or a non-integer value (range/type validation, NFR Design)
+- Client **cannot** write the old `avaliacaoNota` field anymore (confirms removal from `hasOnly`)
+- Client **cannot** rate another client's obra (regression check on the existing, unchanged ownership condition)
+
+### Action Required Before Considering This Unit's Security Verified
+Run `npm run test:rules` on a machine with Java installed (or `firebase login` + install a JDK on this machine) and confirm **all** tests pass, including the 12 pre-existing ones (no regression) plus the 6 new ones — **18/18 expected**. This session could not execute this (documented limitation, same as encountered during the earlier `dev`→`main` merge session).
+
+### Accepted Gap (documented, not fixed — see NFR Requirements Q2=A)
+No automated or manual test exists (or is expected) to verify that a credited `parceiroId` in `avaliacaoParceiros` actually corresponds to a real etapa of that obra — this is an accepted, bounded business-integrity risk, not a security boundary this stage tests for.
+
+## 5. Storage Rules — Explicitly Out of Scope, Not Re-Tested
 `storage.rules` was **not** modified by this work (Workflow Planning bundled only findings #1 and #2, both Firestore-only). The broader Storage findings from reverse-engineering (overly-permissive `logado()`-only rule; missing rules for non-`obras` upload paths) remain open — do not assume this Build and Test stage covers them.

@@ -25,6 +25,7 @@ import {
   hoje, diasDiff
 } from '../js/data.js';
 import { filtrarObras, calcularResumoFechamento } from '../js/fechamento.js';
+import { calcularAcumuladoParceiro } from '../js/avaliacao.js';
 import { permissaoNotificacao, ativarNotificacoes, removerTokenAtual, onForegroundMessage, handleNotificationOpen } from '../js/notifications.js';
 
 // ---------- AUTH ----------
@@ -1380,6 +1381,22 @@ window.abrirParceiroDetalhe = function(id) {
   });
 };
 
+function renderAvaliacaoParceiro(parceiroId) {
+  const acumulado = calcularAcumuladoParceiro(db_obras, parceiroId);
+  if (!acumulado.totalServicosAvaliados) {
+    return `<div class="card" style="margin-bottom:12px"><div class="sec-title" style="margin-bottom:0">Avaliação</div><div style="font-size:12px;color:var(--text-muted);margin-top:4px">Ainda sem avaliações</div></div>`;
+  }
+  return `<div class="card" style="margin-bottom:12px">
+    <div class="sec-title">Avaliação (${acumulado.totalServicosAvaliados} serviço${acumulado.totalServicosAvaliados>1?'s':''} avaliado${acumulado.totalServicosAvaliados>1?'s':''})</div>
+    <div style="font-size:13px;line-height:1.8">
+      <div>Tempo de execução: <b>${acumulado.mediaTempoExecucao}/5</b></div>
+      <div>Acabamento: <b>${acumulado.mediaAcabamento}/5</b></div>
+      <div>Organização e limpeza: <b>${acumulado.mediaOrganizacaoLimpeza}/5</b></div>
+      <div style="margin-top:4px">Avaliação Geral: <b>${acumulado.mediaGeral}/5</b></div>
+    </div>
+  </div>`;
+}
+
 function renderParceiroDetalhe() {
   const p = db_parceiros.find(x => x.id === parceiroDetalheId); if (!p) return;
   document.getElementById('topbar-content').innerHTML = `<h1 style="font-size:15px">${p.nome}</h1>`;
@@ -1408,6 +1425,7 @@ function renderParceiroDetalhe() {
         <button class="btn-sm btn-danger" onclick="removerParceiro('${p.id}')"><i class="ti ti-trash"></i> Excluir</button>
       </div>
     </div>
+    ${renderAvaliacaoParceiro(p.id)}
     <div id="resumo-financeiro-parceiro"></div>
     ${totalDevido > 0 ? `<div class="card" style="margin-bottom:12px">
       <div style="font-size:13px;font-weight:700;margin-bottom:6px">Aviso ao parceiro</div>

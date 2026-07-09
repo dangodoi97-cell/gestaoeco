@@ -489,6 +489,12 @@ export async function decidirOrcamento(orcamentoId, decisao, motivo = '') {
 }
 
 // ---------- AVALIAÇÃO DA OBRA (feita pelo cliente ao final) ----------
-export async function enviarAvaliacao(obraId, nota, comentario) {
-  await updateDoc(doc(db, 'obras', obraId), { avaliacaoNota: nota, avaliacaoComentario: comentario, avaliadoEm: serverTimestamp() });
+export async function enviarAvaliacao(obraId, criterios, avaliacaoGeral, avaliacaoParceiros, comentario) {
+  await updateDoc(doc(db, 'obras', obraId), {
+    avaliacaoCriterios: criterios,
+    avaliacaoGeral,
+    avaliacaoParceiros,
+    avaliacaoComentario: comentario,
+    avaliadoEm: serverTimestamp(),
+  });
 }
