@@ -512,13 +512,18 @@ function renderResumoFechamentos(fechamentos) {
   const atual = fechamentos[fechamentoSelecionadoIdx];
   const porObra = {};
   (atual.itens || []).forEach(i => {
-    if (!porObra[i.obraId]) porObra[i.obraId] = { obraId: i.obraId, obraNome: i.obraNome || 'Obra sem nome', itens: [] };
+    if (!porObra[i.obraId]) porObra[i.obraId] = { obraId: i.obraId, obraNome: i.obraNome || 'Obra sem nome', itens: [], encargos: [] };
     porObra[i.obraId].itens.push(i);
+  });
+  (atual.encargosItens || []).forEach(e => {
+    if (!porObra[e.obraId]) porObra[e.obraId] = { obraId: e.obraId, obraNome: e.obraNome || 'Obra sem nome', itens: [], encargos: [] };
+    porObra[e.obraId].encargos.push(e);
   });
   const obrasHTML = Object.values(porObra).map(g => `
     <div style="margin-bottom:8px">
       <div style="font-weight:600;font-size:13px;cursor:pointer;color:var(--brand)" onclick="abrirObra('${g.obraId}', 'financeiro')">${g.obraNome}</div>
       ${g.itens.map(i => `<div style="font-size:12px;color:var(--text-muted);padding:2px 0">${i.tipo}${i.isDiaria?' (diária)':''}${i.manual?' 🕒 incluída manualmente':''} — ${i.dataConc||'em execução'}${i.detalheDiaria||''} · ${fmtBRL(i.valor)}</div>`).join('')}
+      ${g.encargos.map(e => `<div style="font-size:12px;color:var(--text-muted);padding:2px 0">${e.descricao} (encargo) · ${fmtBRL(e.valor)}</div>`).join('')}
     </div>`).join('') || `<div style="font-size:12px;color:var(--text-muted)">Nenhum item neste fechamento.</div>`;
 
   const statusCliente = atual.statusCliente || 'pendente';
@@ -876,6 +881,10 @@ function renderAprovacao() {
         <div style="margin-bottom:10px">
           ${(c.etapas||[]).map(e => `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:0.5px solid var(--border)">
             <span style="font-size:13px">${e.tipo}</span>
+            <span style="font-size:13px;font-weight:600;color:var(--text-success)">${e.val ? fmtBRL(e.val) : '—'}</span>
+          </div>`).join('')}
+          ${(c.encargos||[]).map(e => `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:0.5px solid var(--border)">
+            <span style="font-size:13px">${e.descricao} (encargo)</span>
             <span style="font-size:13px;font-weight:600;color:var(--text-success)">${e.val ? fmtBRL(e.val) : '—'}</span>
           </div>`).join('')}
           <div style="display:flex;justify-content:space-between;padding:8px 0;font-weight:700">

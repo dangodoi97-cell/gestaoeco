@@ -273,6 +273,10 @@ function getEtapasFechamento(clienteId, inicio, fim) {
   return [...etapasPeriodo, ...etapasManuaisValidas];
 }
 
+function getEncargosFechamento(clienteId, inicio, fim) {
+  return db_encargos.filter(e => estaNoPeriodo(e.criadoEm, inicio, fim) && (db_obras.find(o => o.id === e.obraId) || {}).clienteId === clienteId);
+}
+
 window.removerEtapaFechamento = function(etapaId, manual) {
   if (manual) fechamentoEtapasManuais = fechamentoEtapasManuais.filter(e => e.id !== etapaId);
   else fechamentoEtapasRemovidas.add(etapaId);
@@ -396,7 +400,7 @@ async function renderFechamentoCaixa() {
   });
   const valorRepasse = Object.values(parceirosResumo).reduce((s, p) => s + p.valor, 0);
 
-  const encargosPeriodo = db_encargos.filter(e => estaNoPeriodo(e.criadoEm, inicio, fim) && (db_obras.find(o => o.id === e.obraId) || {}).clienteId === clienteId);
+  const encargosPeriodo = getEncargosFechamento(clienteId, inicio, fim);
   const valorEncargos = encargosPeriodo.reduce((s, e) => s + parseBRL(e.valor), 0);
   const valorExtrasConfirmados = fechamentoDespesasConfirmadas.reduce((s, e) => s + parseBRL(e.valor), 0);
   const valorDespesas = valorRepasse + valorExtrasConfirmados;
@@ -521,8 +525,14 @@ window.salvarFechamentoCaixa = async function(clienteId, inicio, fim, totalReceb
 
   const cliente = db_clientes.find(c => c.id === clienteId);
   const etapasSalvas = getEtapasFechamento(clienteId, inicio, fim);
+  const encargosSalvos = getEncargosFechamento(clienteId, inicio, fim);
 
   const itens = etapasSalvas.map(e => ({ id: e.id, tipo: e.tipo, valor: e.val, obraId: e.obraId, obraNome: e.obraNome, isDiaria: !!(e.isDiaria || e.isDiariaAvulsa), dataConc: e.dataConc || null, manual: !!e.manual, motivo: e.manual ? e.motivo : null, detalheDiaria: detalheDiariaTexto(e) }));
+
+  const encargosItens = encargosSalvos.map(e => {
+    const obra = db_obras.find(o => o.id === e.obraId);
+    return { id: e.id, obraId: e.obraId, obraNome: obra?.nome || '', descricao: e.descricao, valor: e.valor };
+  });
 
   const despesasRepasse = [];
   etapasSalvas.forEach(e => {
@@ -537,7 +547,7 @@ window.salvarFechamentoCaixa = async function(clienteId, inicio, fim, totalReceb
   const observacaoCliente = document.getElementById('fechamento-obs-cliente')?.value.trim() || '';
   const observacaoInterna = document.getElementById('fechamento-obs-interna')?.value.trim() || '';
 
-  const dadosPublicos = { clienteId, clienteNome: cliente?.nome || '', periodoInicio: inicio, periodoFim: fim, totalReceber, itens, observacaoCliente, statusEnvio: 'pendente', statusCliente: 'pendente' };
+  const dadosPublicos = { clienteId, clienteNome: cliente?.nome || '', periodoInicio: inicio, periodoFim: fim, totalReceber, itens, encargosItens, observacaoCliente, statusEnvio: 'pendente', statusCliente: 'pendente' };
   const dadosInternos = { totalRepasse, totalEncargos, totalDiarias, totalEtapas, totalExtras, lucro, despesasRepasse, despesasExtras: fechamentoDespesasConfirmadas.slice(), observacaoInterna };
 
   let fechamentoId;
@@ -612,16 +622,23 @@ window.confirmarEnvioFechamento = async function(fechamentoId) {
 
   const porObra = {};
   itensCobraveis.forEach(i => {
-    if (!porObra[i.obraId]) porObra[i.obraId] = { obraId: i.obraId, obraNome: i.obraNome, itens: [] };
+    if (!porObra[i.obraId]) porObra[i.obraId] = { obraId: i.obraId, obraNome: i.obraNome, itens: [], encargos: [] };
     porObra[i.obraId].itens.push(i);
+  });
+  (f.encargosItens || []).forEach(e => {
+    if (!porObra[e.obraId]) porObra[e.obraId] = { obraId: e.obraId, obraNome: e.obraNome, itens: [], encargos: [] };
+    porObra[e.obraId].encargos.push(e);
   });
 
   for (const g of Object.values(porObra)) {
-    const total = g.itens.reduce((s, i) => s + parseBRL(i.valor), 0);
+    const totalEtapas = g.itens.reduce((s, i) => s + parseBRL(i.valor), 0);
+    const totalEncargos = g.encargos.reduce((s, e) => s + parseBRL(e.valor), 0);
+    const total = totalEtapas + totalEncargos;
     await criarSolicitacaoPagamento({
       clienteId: f.clienteId, clienteNome: f.clienteNome,
       obraId: g.obraId, obraNome: g.obraNome,
       etapas: g.itens.map(i => ({ id: i.id, tipo: i.tipo, val: i.valor, dataConc: i.dataConc || '' })),
+      encargos: g.encargos.map(e => ({ id: e.id, descricao: e.descricao, val: e.valor })),
       total: total.toFixed(2).replace('.', ','),
       mensagem: `Referente ao fechamento de caixa do período ${fmtDataCurta(f.periodoInicio)} a ${fmtDataCurta(f.periodoFim)}.`,
       pix, formaPagamento, fechamentoId: f.id
@@ -737,8 +754,12 @@ async function renderDetalheFechamentoConsulta(fechamentoId) {
 
   const porObra = {};
   (f.itens || []).forEach(i => {
-    if (!porObra[i.obraId]) porObra[i.obraId] = { obraId: i.obraId, obraNome: i.obraNome || 'Obra sem nome', itens: [] };
+    if (!porObra[i.obraId]) porObra[i.obraId] = { obraId: i.obraId, obraNome: i.obraNome || 'Obra sem nome', itens: [], encargos: [] };
     porObra[i.obraId].itens.push(i);
+  });
+  (f.encargosItens || []).forEach(e => {
+    if (!porObra[e.obraId]) porObra[e.obraId] = { obraId: e.obraId, obraNome: e.obraNome || 'Obra sem nome', itens: [], encargos: [] };
+    porObra[e.obraId].encargos.push(e);
   });
   const itensHTML = Object.values(porObra).map(g => `
     <div style="margin-bottom:10px">
@@ -749,6 +770,7 @@ async function renderDetalheFechamentoConsulta(fechamentoId) {
         const badge = pago ? `<span class="badge badge-aprov">Pago</span>` : `<span class="badge badge-pend">Aguardando pagamento</span>`;
         return `<div class="row-item"><div class="row-info"><div class="row-title" style="font-size:12px">${i.tipo}${i.isDiaria ? ' (diária)' : ''}</div><div class="row-meta">${fmtBRL(parseBRL(i.valor))}</div></div>${badge}</div>`;
       }).join('')}
+      ${g.encargos.map(e => `<div class="row-item"><div class="row-info"><div class="row-title" style="font-size:12px">${e.descricao} (encargo)</div><div class="row-meta">${fmtBRL(parseBRL(e.valor))}</div></div></div>`).join('')}
     </div>`).join('') || `<div class="empty"><i class="ti ti-clipboard-check"></i><p>Nenhum item neste fechamento.</p></div>`;
 
   const cobrancasHTML = cobrancas.length ? cobrancas.map(c => `
