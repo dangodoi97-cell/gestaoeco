@@ -304,7 +304,7 @@ function renderEtapasDetalhe(etapas) {
     const atrasada = exec && e.prazo && e.prazo < hoje_;
 
     let statusChip = exec ? chip('Em execução','blue') : chip('Concluído','green');
-    let pagChip = !exec ? (pago ? chip('Pago','green') : chip('A pagar','red')) : '';
+    let pagChip = !exec ? (pago ? chip('Pago','green') : e.statusCobranca === 'solicitacao_pagamento' ? chip('Aguardando pagamento','yellow') : chip('A pagar','red')) : '';
 
     return `<div class="etapa-card">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">
@@ -482,7 +482,7 @@ function renderHistorico() {
   if (!rows.length) { el.innerHTML = `<div class="empty"><i class="ti ti-history"></i><p>Nenhum serviço concluído ainda.</p></div>`; return; }
   el.innerHTML = `<div class="section-label">${rows.length} serviço${rows.length>1?'s':''} concluído${rows.length>1?'s':''}</div>` + rows.map(e => {
     const pago = e.pagamento === 'pago';
-    const pagChip = pago ? chip('Pago','green') : chip('A pagar','red');
+    const pagChip = pago ? chip('Pago','green') : e.statusCobranca === 'solicitacao_pagamento' ? chip('Aguardando pagamento','yellow') : chip('A pagar','red');
     return `<div class="etapa-card">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">
         <div><div style="font-size:15px;font-weight:600">${e.tipo}</div><div style="font-size:12px;color:var(--text-muted)">${e.obraNome}</div></div>
@@ -617,6 +617,7 @@ function renderFinanceiro() {
       let st, sc;
       if (exec) { st='Em execução'; sc='blue'; }
       else if (pago) { st='Pago'; sc='green'; }
+      else if (e.statusCobranca === 'solicitacao_pagamento') { st='Aguardando pagamento'; sc='yellow'; }
       else { st='A pagar'; sc='red'; }
       return `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:0.5px solid var(--border)">
         <div>

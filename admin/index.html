@@ -150,6 +150,7 @@
   <div class="list-card" onclick="abrirOpcoesPagamento()"><i class="ti ti-credit-card"></i> &nbsp;Opções de pagamento</div>
   <div class="list-card" onclick="goPage('lixeira')"><i class="ti ti-trash"></i> &nbsp;Lixeira</div>
   <div class="list-card" onclick="goPage('fechamento')"><i class="ti ti-wallet"></i> &nbsp;Fechamento de caixa</div>
+  <div class="list-card" onclick="goPage('consulta-fechamentos')"><i class="ti ti-search"></i> &nbsp;Consultar fechamentos</div>
   <div class="list-card" onclick="goPage('clientes')"><i class="ti ti-users"></i> &nbsp;Clientes</div>
   <div class="list-card" onclick="goPage('admins')"><i class="ti ti-shield"></i> &nbsp;Administradores</div>
 </div>
@@ -219,6 +220,7 @@
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button class="btn-sm btn-success" onclick="renderFechamentoCaixa()"><i class="ti ti-calculator"></i> Calcular</button>
       <button class="btn-sm" onclick="abrirNovaCobranca()"><i class="ti ti-send"></i> Cobrança avulsa</button>
+      <button class="btn-sm" onclick="goPage('consulta-fechamentos')"><i class="ti ti-search"></i> Consultar fechamentos</button>
     </div>
   </div>
   <div id="fechamento-preview" style="margin-top:10px"></div>
@@ -251,6 +253,29 @@
     <div class="mb" style="margin-bottom:0"><label>Observação interna (só admin)</label><textarea id="fechamento-obs-interna" rows="2" placeholder="Não é exibida ao cliente"></textarea></div>
   </div>
   <div id="fechamento-lucro-final" style="margin-top:10px"></div>
+</div>
+<div id="page-consulta-fechamentos" class="page">
+  <button class="back-btn" onclick="goPage('mais')"><i class="ti ti-arrow-left"></i> Voltar</button>
+  <div class="sec-title">Consultar fechamentos</div>
+  <div class="card">
+    <div class="g2 mb" style="margin-bottom:0">
+      <div><label>Cliente</label>
+        <select id="consulta-fech-cliente" onchange="renderConsultaFechamentos()">
+          <option value="">Todos os clientes</option>
+        </select>
+      </div>
+      <div><label>Status</label>
+        <select id="consulta-fech-status" onchange="renderConsultaFechamentos()">
+          <option value="">Todos</option>
+          <option value="pendente_envio">Aguardando envio</option>
+          <option value="enviado_pendente">Enviado, aguardando resposta</option>
+          <option value="aceito">Aceito pelo cliente</option>
+          <option value="contestado">Contestado</option>
+        </select>
+      </div>
+    </div>
+  </div>
+  <div id="lista-consulta-fechamentos" style="margin-top:10px"></div>
 </div>
 <div id="page-clientes" class="page">
   <button class="back-btn" onclick="goPage('mais')"><i class="ti ti-arrow-left"></i> Voltar</button>
@@ -628,6 +653,15 @@
       <div class="mb" style="margin-bottom:0"><label>Banco</label><input type="text" id="cob-pix-banco" placeholder="Ex: Nubank, Itaú, BB..."></div>
     </div>
     <button class="btn-main" id="btn-enviar-cobranca" onclick="enviarCobranca()"><i class="ti ti-send"></i> Enviar cobrança ao cliente</button>
+  </div>
+</div>
+
+<!-- MODAL: DETALHE DO FECHAMENTO (consulta) -->
+<div class="modal-overlay" id="modal-detalhe-fechamento" onclick="bgClose(event,'modal-detalhe-fechamento')">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title">Detalhe do fechamento</div>
+    <div id="detalhe-fechamento-conteudo"></div>
   </div>
 </div>
 

@@ -53,6 +53,7 @@ let fechamentoEtapasRemovidas = new Set();
 let fechamentoEtapasManuais = [];
 let fechamentoChaveAtual = null;
 let fechamentoEmEdicaoId = null;
+let fechamentoConsultaAtivo = null;
 let obraDetalheOrigem = 'obras';
 
 function iniciarApp() {
@@ -88,8 +89,8 @@ function iniciarApp() {
   escutarSolicitacoes(s => { db_solicitacoes = s; renderSolicitacoes(); updateBadgeSolicitacoes(); });
   escutarDiarias(d => { db_diarias = d; renderDiarias(); });
   escutarPagamentosCliente(p => { db_pagamentosAdmin = p; updateBadgePagamentos(); renderPagamentosAdmin(); });
-  escutarSolicitacoesPagamento(s => { db_solicitacoesPagamento = s; renderContestacoes(); updateBadge(); });
-  escutarFechamentosCaixa(f => { db_fechamentos = f; renderFechamentoCaixa(); renderFechamentosContestados(); updateBadge(); });
+  escutarSolicitacoesPagamento(s => { db_solicitacoesPagamento = s; renderContestacoes(); processarCobrancasPagas(s); updateBadge(); });
+  escutarFechamentosCaixa(f => { db_fechamentos = f; renderFechamentoCaixa(); renderFechamentosContestados(); renderConsultaFechamentos(); updateBadge(); });
   escutarOrcamentos(o => {
     db_orcamentos = o;
     renderAprovacao();
@@ -188,6 +189,14 @@ function popularSelectClientes() {
     db_clientes.filter(c => c.status === 'aprovado').forEach(c => { const o = document.createElement('option'); o.value = c.id; o.textContent = c.nome; selFechamento.appendChild(o); });
     selFechamento.value = atualFechamento;
   }
+
+  const selConsulta = document.getElementById('consulta-fech-cliente');
+  if (selConsulta) {
+    const atualConsulta = selConsulta.value;
+    selConsulta.innerHTML = `<option value="">Todos os clientes</option>`;
+    db_clientes.forEach(c => { const o = document.createElement('option'); o.value = c.id; o.textContent = c.nome; selConsulta.appendChild(o); });
+    selConsulta.value = atualConsulta;
+  }
 }
 
 // Sobrescreve o onclick do botão nova obra para popular o select antes de abrir
@@ -206,7 +215,7 @@ window.abrirModalNovaObra = function() {
   document.getElementById('obra-cliente').value = '';
   window.showModal('modal-nova-obra');
 };
-const TITULOS = { obras:'Painel Admin', execucao:'Em execução', aprovacao:'Notificações', parceiros:'Parceiros', mais:'Mais opções', precos:'Tabela de preços', repasse:'Tabela de repasse', diarias:'Tabela de diárias', lixeira:'Lixeira', fechamento:'Fechamento de caixa', clientes:'Clientes', admins:'Administradores', solicitacoes:'Solicitações', 'pagamentos-cli':'Pagamentos dos clientes', 'opcoes-pagamento':'Opções de pagamento' };
+const TITULOS = { obras:'Painel Admin', execucao:'Em execução', aprovacao:'Notificações', parceiros:'Parceiros', mais:'Mais opções', precos:'Tabela de preços', repasse:'Tabela de repasse', diarias:'Tabela de diárias', lixeira:'Lixeira', fechamento:'Fechamento de caixa', clientes:'Clientes', admins:'Administradores', solicitacoes:'Solicitações', 'pagamentos-cli':'Pagamentos dos clientes', 'opcoes-pagamento':'Opções de pagamento', 'consulta-fechamentos':'Consultar fechamentos' };
 
 window.goPage = function(p) {
   document.querySelectorAll('.page').forEach(x => x.classList.remove('active'));
@@ -229,6 +238,7 @@ window.goPage = function(p) {
     }
     renderFechamentoCaixa();
   }
+  if (p === 'consulta-fechamentos') renderConsultaFechamentos();
 };
 
 window.abrirFechamentoCaixa = function() {
@@ -676,6 +686,92 @@ function renderFechamentosContestados() {
     </div>
     <button class="btn-sm btn-success" onclick="reabrirFechamento('${f.id}')"><i class="ti ti-edit"></i> Reabrir para edição</button>
   </div>`).join('');
+}
+
+function badgeStatusFechamento(f) {
+  const chips = [];
+  chips.push(f.statusEnvio === 'enviado' ? `<span class="badge badge-exec">Enviado</span>` : `<span class="badge badge-pend">Aguardando envio</span>`);
+  if (f.statusEnvio === 'enviado') {
+    const sc = f.statusCliente || 'pendente';
+    chips.push(sc === 'aceito' ? `<span class="badge badge-aprov">Aceito</span>` : sc === 'contestado' ? `<span class="badge badge-rej">Contestado</span>` : `<span class="badge badge-pend">Aguardando resposta</span>`);
+  }
+  return chips.join('');
+}
+
+window.renderConsultaFechamentos = function() {
+  const el = document.getElementById('lista-consulta-fechamentos');
+  if (!el) return;
+  const clienteId = document.getElementById('consulta-fech-cliente')?.value || '';
+  const statusFiltro = document.getElementById('consulta-fech-status')?.value || '';
+
+  let lista = db_fechamentos.slice().sort((a, b) => (b.criadoEm?.toMillis?.() || 0) - (a.criadoEm?.toMillis?.() || 0));
+  if (clienteId) lista = lista.filter(f => f.clienteId === clienteId);
+  if (statusFiltro === 'pendente_envio') lista = lista.filter(f => f.statusEnvio === 'pendente');
+  else if (statusFiltro === 'enviado_pendente') lista = lista.filter(f => f.statusEnvio === 'enviado' && (f.statusCliente || 'pendente') === 'pendente');
+  else if (statusFiltro === 'aceito') lista = lista.filter(f => f.statusCliente === 'aceito');
+  else if (statusFiltro === 'contestado') lista = lista.filter(f => f.statusCliente === 'contestado');
+
+  el.innerHTML = lista.length ? lista.map(f => `
+    <div class="list-card" onclick="abrirDetalheFechamentoConsulta('${f.id}')">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+        <div><div style="font-size:15px;font-weight:600">${f.clienteNome || 'Cliente'}</div><div style="font-size:12px;color:var(--text-muted)">${f.periodoInicio} a ${f.periodoFim}</div></div>
+        <div style="font-size:14px;font-weight:600;color:var(--text-success)">${fmtBRL(f.totalReceber || 0)}</div>
+      </div>
+      <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">${badgeStatusFechamento(f)}</div>
+    </div>`).join('') : `<div class="empty"><i class="ti ti-search-off"></i><p>Nenhum fechamento encontrado.</p></div>`;
+};
+
+window.abrirDetalheFechamentoConsulta = function(fechamentoId) {
+  fechamentoConsultaAtivo = fechamentoId;
+  renderDetalheFechamentoConsulta(fechamentoId);
+  window.showModal('modal-detalhe-fechamento');
+};
+
+async function renderDetalheFechamentoConsulta(fechamentoId) {
+  const f = db_fechamentos.find(x => x.id === fechamentoId);
+  const el = document.getElementById('detalhe-fechamento-conteudo');
+  if (!f || !el) return;
+
+  const cobrancas = db_solicitacoesPagamento.filter(s => s.fechamentoId === f.id);
+
+  const porObra = {};
+  (f.itens || []).forEach(i => {
+    if (!porObra[i.obraId]) porObra[i.obraId] = { obraId: i.obraId, obraNome: i.obraNome || 'Obra sem nome', itens: [] };
+    porObra[i.obraId].itens.push(i);
+  });
+  const itensHTML = Object.values(porObra).map(g => `
+    <div style="margin-bottom:10px">
+      <div style="font-weight:600;font-size:13px;cursor:pointer;color:var(--brand)" onclick="closeModal('modal-detalhe-fechamento');abrirObra('${g.obraId}','fechamento')">${g.obraNome}</div>
+      ${g.itens.map(i => {
+        const etapaAtual = (window._todasEtapas || []).find(x => x.id === i.id);
+        const pago = etapaAtual ? etapaAtual.pagamento === 'pago' : false;
+        const badge = pago ? `<span class="badge badge-aprov">Pago</span>` : `<span class="badge badge-pend">Aguardando pagamento</span>`;
+        return `<div class="row-item"><div class="row-info"><div class="row-title" style="font-size:12px">${i.tipo}${i.isDiaria ? ' (diária)' : ''}</div><div class="row-meta">${fmtBRL(parseBRL(i.valor))}</div></div>${badge}</div>`;
+      }).join('')}
+    </div>`).join('') || `<div class="empty"><i class="ti ti-clipboard-check"></i><p>Nenhum item neste fechamento.</p></div>`;
+
+  const cobrancasHTML = cobrancas.length ? cobrancas.map(c => `
+    <div class="row-item">
+      <div class="row-info"><div class="row-title">${c.obraNome} — ${fmtBRL(c.total)}</div><div class="row-meta">Status: ${c.status}</div></div>
+      ${c.status === 'pendente' ? `<button class="btn-sm btn-success" onclick="marcarCobrancaRecebida('${c.id}')"><i class="ti ti-check"></i> Marcar recebido</button>` : ''}
+    </div>`).join('') : `<div class="empty"><i class="ti ti-receipt-off"></i><p>Nenhuma cobrança gerada ainda.</p></div>`;
+
+  el.innerHTML = `
+    <div style="margin-bottom:10px">
+      <div style="font-size:15px;font-weight:600">${f.clienteNome || 'Cliente'}</div>
+      <div style="font-size:12px;color:var(--text-muted)">${f.periodoInicio} a ${f.periodoFim}</div>
+    </div>
+    <div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap">${badgeStatusFechamento(f)}</div>
+    <div class="stat" style="margin-bottom:10px"><span class="stat-val" style="font-size:16px">${fmtBRL(f.totalReceber || 0)}</span><span class="stat-lbl">Total do fechamento</span></div>
+    ${f.observacaoCliente ? `<div style="font-size:12px;background:var(--surface-1);border-radius:8px;padding:8px;margin-bottom:10px"><i class="ti ti-message-circle"></i> ${f.observacaoCliente}</div>` : ''}
+    ${f.statusCliente === 'contestado' ? `<div style="font-size:12px;background:var(--bg-danger);color:var(--text-danger);border-radius:8px;padding:8px;margin-bottom:10px"><i class="ti ti-alert-circle"></i> <strong>Contestado:</strong> ${f.contestacaoMotivo || ''}</div>` : ''}
+    <div class="sec-title" style="margin-bottom:4px">Obras e etapas</div>
+    ${itensHTML}
+    <div class="divider"></div>
+    <div class="sec-title" style="margin:10px 0 4px">Cobranças</div>
+    ${cobrancasHTML}
+    ${f.statusCliente === 'contestado' ? `<button class="btn-sm btn-success" style="width:100%;justify-content:center;margin-top:12px" onclick="closeModal('modal-detalhe-fechamento');reabrirFechamento('${f.id}')"><i class="ti ti-edit"></i> Reabrir para edição</button>` : ''}
+  `;
 }
 
 function updateBadge() {
@@ -1299,7 +1395,8 @@ function renderEtapas() {
     const margem = e.val && e.valRepasse ? parseBRL(e.val) - parseBRL(e.valRepasse) : null;
     const repasseInfo = e.valRepasse ? ` | Repasse: R$ ${e.valRepasse}` : '';
     const margemInfo = margem !== null ? ` | Margem: ${fmtBRL(margem)}` : '';
-    const pgBadge = e.status === 'concluido' ? `<span class="badge ${e.pagamento==='pago'?'badge-aprov':'badge-apagar'}" style="margin-left:4px">${e.pagamento==='pago'?'Pago':'A pagar'}</span>` : '';
+    const pgInfo = e.pagamento === 'pago' ? { cls: 'badge-aprov', lbl: 'Pago' } : e.statusCobranca === 'solicitacao_pagamento' ? { cls: 'badge-pend', lbl: 'Aguardando pagamento' } : { cls: 'badge-apagar', lbl: 'A pagar' };
+    const pgBadge = e.status === 'concluido' ? `<span class="badge ${pgInfo.cls}" style="margin-left:4px">${pgInfo.lbl}</span>` : '';
     const temFotos = e.fotoAntes || e.fotoDepois || (e.fotosExtras || []).length;
     return `<div class="row-item" style="flex-direction:column;align-items:stretch;gap:8px">
       <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px">
@@ -2406,6 +2503,25 @@ window.enviarCobranca = async function() {
 };
 
 // Contestações recebidas pelo admin
+async function processarCobrancasPagas(solicitacoes) {
+  const pagas = solicitacoes.filter(s => s.status === 'paga');
+  for (const s of pagas) {
+    for (const e of s.etapas || []) {
+      const etapaAtual = (window._todasEtapas || []).find(x => x.id === e.id);
+      if (etapaAtual && etapaAtual.pagamento !== 'pago') {
+        await atualizarEtapa(s.obraId, e.id, { pagamento: 'pago', statusCobranca: null });
+      }
+    }
+  }
+}
+
+window.marcarCobrancaRecebida = async function(solId) {
+  if (!confirm('Confirmar que esta cobrança foi recebida? As etapas correspondentes serão marcadas como pagas.')) return;
+  await atualizarSolicitacaoPagamento(solId, { status: 'paga', dataPagamento: hoje() });
+  toast('Cobrança marcada como recebida');
+  if (fechamentoConsultaAtivo) renderDetalheFechamentoConsulta(fechamentoConsultaAtivo);
+};
+
 function renderContestacoes() {
   const contestadas = db_solicitacoesPagamento.filter(s => s.status === 'contestada');
   const secao = document.getElementById('secao-contestacoes');
