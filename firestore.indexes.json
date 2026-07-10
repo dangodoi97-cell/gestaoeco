@@ -47,6 +47,14 @@
         { "fieldPath": "clienteId", "order": "ASCENDING" },
         { "fieldPath": "criadoEm", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "fechamentos_caixa",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "clienteId", "order": "ASCENDING" },
+        { "fieldPath": "criadoEm", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

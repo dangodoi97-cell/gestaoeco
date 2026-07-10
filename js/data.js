@@ -319,8 +319,13 @@ export async function salvarConfigPagamento(dados) {
   await setDoc(doc(db, 'config_pagamento', 'default'), { ...dados, atualizadoEm: serverTimestamp() }, { merge: true });
 }
 
-export function escutarFechamentosCaixa(callback) {
-  const q = query(collection(db, 'fechamentos_caixa'), orderBy('criadoEm', 'desc'));
+export function escutarFechamentosCaixa(callback, filtroClienteId = null) {
+  let q;
+  if (filtroClienteId) {
+    q = query(collection(db, 'fechamentos_caixa'), where('clienteId', '==', filtroClienteId), orderBy('criadoEm', 'desc'));
+  } else {
+    q = query(collection(db, 'fechamentos_caixa'), orderBy('criadoEm', 'desc'));
+  }
   return onSnapshot(q, snap => {
     callback(snap.docs.map(d => ({ id: d.id, ...d.data() })));
   });

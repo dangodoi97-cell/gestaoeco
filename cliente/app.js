@@ -93,7 +93,7 @@ function iniciarApp() {
   escutarFechamentosCaixa(f => {
     db_fechamentos = f;
     if (document.getElementById('page-financeiro').classList.contains('active')) renderFinanceiro();
-  });
+  }, usuarioAtual.uid);
 }
 
 // ---------- HELPERS ----------
