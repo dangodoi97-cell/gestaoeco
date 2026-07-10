@@ -61,8 +61,18 @@ service cloud.firestore {
     }
 
     match /fechamentos_caixa/{fechamentoId} {
-      allow read: if logado();
-      allow create, update, delete: if souAdmin();
+      allow read: if souAdmin() || (souClienteAprovado() && resource.data.clienteId == request.auth.uid);
+      allow create, delete: if souAdmin();
+      allow update: if souAdmin() || (souClienteAprovado() && resource.data.clienteId == request.auth.uid &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['statusCliente', 'contestacaoMotivo', 'contestadoEm']));
+
+      match /interno/{docId} {
+        allow read, write: if souAdmin();
+      }
+    }
+
+    match /config_pagamento/{id} {
+      allow read, write: if souAdmin();
     }
 
     match /solicitacoes/{solicitacaoId} {

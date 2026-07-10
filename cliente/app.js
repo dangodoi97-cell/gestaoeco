@@ -1,7 +1,7 @@
 // ============================================
 // APP CLIENTE — versão revisada e completa
 // ============================================
-import { observarAuth, logout } from '../js/auth.js';
+import { observarAuth, logout, mensagemErroFirebase, trocarSenha, trocarEmailConta } from '../js/auth.js';
 import {
   escutarObras, escutarEtapas, escutarTodasEtapas,
   escutarPrecos,
@@ -10,8 +10,9 @@ import {
   escutarSolicitacoesPagamento, atualizarSolicitacaoPagamento,
   escutarNotificacoes, marcarNotificacaoLida,
   escutarOrcamentos, decidirOrcamento,
-  escutarFechamentosCaixa,
+  escutarFechamentosCaixa, atualizarFechamentoCaixa,
   enviarAvaliacao,
+  atualizarPerfilUsuario,
   uploadFoto, fileParaBase64,
   hoje, diasDiff
 } from '../js/data.js';
@@ -42,6 +43,8 @@ let pagObraId = null;
 let cobAtiva = null; // id da solicitação sendo editada
 let orcamentoAtivo = null; // orçamento sendo decidido no modal
 let avaliacaoObraId = null, avaliacaoNotaAtual = 0;
+let fechamentoSelecionadoIdx = 0;
+let obraDetalheOrigem = 'obras';
 
 function iniciarApp() {
   escutarObras(obras => {
@@ -124,7 +127,7 @@ function chip(texto, tipo) {
 }
 
 // ---------- NAVEGAÇÃO ----------
-const TITULOS = { obras:'Minhas obras', aprovacao:'Notificações', financeiro:'Financeiro', historico:'Histórico', precos:'Preços' };
+const TITULOS = { obras:'Minhas obras', aprovacao:'Notificações', financeiro:'Financeiro', historico:'Histórico', precos:'Preços', simulacao:'Simulação de orçamento', perfil:'Meu perfil' };
 window.goPage = function(p) {
   document.querySelectorAll('.page').forEach(x => x.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
@@ -134,8 +137,12 @@ window.goPage = function(p) {
   const title = TITULOS[p] || '';
   document.getElementById('topbar-content').innerHTML = `<h1>${title === 'Minhas obras' ? 'EcoSistema' : title}</h1><div class="sub" id="topbar-sub">${usuarioAtual?.nome || ''}</div>`;
   if (p === 'financeiro') renderFinanceiro();
+  if (p === 'simulacao') popularSelectSimulacao();
+  if (p === 'perfil') preencherPerfil();
   updateBadge();
 };
+
+window.abrirPerfil = function() { window.goPage('perfil'); };
 
 function updateBadge() {
   const nOrcamentos = db_orcamentos.filter(o => o.status === 'pendente').length;
@@ -229,7 +236,12 @@ function renderObras() {
   }).join('');
 }
 
-window.abrirObra = function(id) {
+window.voltarObraDetalhe = function() {
+  window.goPage(obraDetalheOrigem);
+};
+
+window.abrirObra = function(id, origem) {
+  obraDetalheOrigem = origem || 'obras';
   obraAtiva = db_obras.find(o => o.id === id);
   document.querySelectorAll('.page').forEach(x => x.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
@@ -489,26 +501,103 @@ function renderHistorico() {
 // ============================================================
 // FINANCEIRO
 // ============================================================
+function meusFechamentosOrdenados() {
+  return db_fechamentos.filter(f => f.clienteId === usuarioAtual.uid)
+    .sort((a, b) => (b.criadoEm?.toMillis?.() || 0) - (a.criadoEm?.toMillis?.() || 0));
+}
+
+function renderResumoFechamentos(fechamentos) {
+  if (!fechamentos.length) return '';
+  if (fechamentoSelecionadoIdx >= fechamentos.length) fechamentoSelecionadoIdx = 0;
+  const atual = fechamentos[fechamentoSelecionadoIdx];
+  const porObra = {};
+  (atual.itens || []).forEach(i => {
+    if (!porObra[i.obraId]) porObra[i.obraId] = { obraId: i.obraId, obraNome: i.obraNome || 'Obra sem nome', itens: [] };
+    porObra[i.obraId].itens.push(i);
+  });
+  const obrasHTML = Object.values(porObra).map(g => `
+    <div style="margin-bottom:8px">
+      <div style="font-weight:600;font-size:13px;cursor:pointer;color:var(--brand)" onclick="abrirObra('${g.obraId}', 'financeiro')">${g.obraNome}</div>
+      ${g.itens.map(i => `<div style="font-size:12px;color:var(--text-muted);padding:2px 0">${i.tipo}${i.isDiaria?' (diária)':''}${i.manual?' 🕒 incluída manualmente':''} — ${i.dataConc||'em execução'}${i.detalheDiaria||''} · ${fmtBRL(i.valor)}</div>`).join('')}
+    </div>`).join('') || `<div style="font-size:12px;color:var(--text-muted)">Nenhum item neste fechamento.</div>`;
+
+  const statusCliente = atual.statusCliente || 'pendente';
+  const statusChip = statusCliente === 'aceito' ? chip('Aceito','green') : statusCliente === 'contestado' ? chip('Contestado','red') : chip('Aguardando sua resposta','yellow');
+
+  const acoesHTML = statusCliente === 'pendente' ? `
+    <div class="confirm-bar" style="margin-top:10px">
+      <button class="btn-sm btn-success" onclick="aceitarFechamento('${atual.id}')"><i class="ti ti-check"></i> Aceitar</button>
+      <button class="btn-sm btn-danger" onclick="abrirContestarFechamento('${atual.id}')"><i class="ti ti-x"></i> Contestar</button>
+    </div>
+    <div id="fech-contestar-${atual.id}" style="display:none;margin-top:10px">
+      <textarea id="fech-motivo-${atual.id}" rows="2" placeholder="Descreva o motivo da contestação"></textarea>
+      <button class="btn-sm btn-danger" style="width:100%;justify-content:center;margin-top:6px" onclick="contestarFechamento('${atual.id}')">Enviar contestação</button>
+    </div>` : statusCliente === 'contestado' ? `
+    <div style="font-size:12px;color:var(--text-danger);margin-top:8px"><i class="ti ti-alert-circle"></i> Você contestou este fechamento: "${atual.contestacaoMotivo||''}". Aguardando revisão do administrador.</div>` : '';
+
+  return `<div class="card" style="margin-bottom:12px;border-left:4px solid var(--brand)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <div style="font-size:15px;font-weight:600">Fechamento de caixa</div>
+      <span class="chip chip-green">${atual.periodoInicio || '—'} · ${atual.periodoFim || '—'}</span>
+    </div>
+    <div style="margin-bottom:8px">${statusChip}</div>
+    <div class="stat" style="margin-bottom:10px"><span class="stat-val" style="font-size:16px">${fmtBRL(atual.totalReceber || 0)}</span><span class="stat-lbl">Total a pagar no período</span></div>
+    ${atual.observacaoCliente ? `<div style="font-size:12px;background:var(--surface-1);border-radius:8px;padding:8px;margin-bottom:8px"><i class="ti ti-message-circle"></i> ${atual.observacaoCliente}</div>` : ''}
+    ${obrasHTML}
+    ${acoesHTML}
+    <div style="margin-top:10px"><button class="btn-sm" style="width:100%;justify-content:center" onclick="abrirHistoricoFechamentos()"><i class="ti ti-history"></i> Ver histórico de fechamentos</button></div>
+  </div>`;
+}
+
+window.aceitarFechamento = async function(id) {
+  await atualizarFechamentoCaixa(id, { statusCliente: 'aceito' });
+  toast('Fechamento aceito!');
+};
+
+window.abrirContestarFechamento = function(id) {
+  const div = document.getElementById(`fech-contestar-${id}`);
+  if (div) div.style.display = div.style.display === 'none' ? 'block' : 'none';
+};
+
+window.contestarFechamento = async function(id) {
+  const motivo = document.getElementById(`fech-motivo-${id}`)?.value.trim();
+  if (!motivo) { toast('Descreva o motivo da contestação'); return; }
+  await atualizarFechamentoCaixa(id, { statusCliente: 'contestado', contestacaoMotivo: motivo, contestadoEm: hoje() });
+  const pendentes = db_cobrancas.filter(c => c.fechamentoId === id && c.status === 'pendente');
+  for (const c of pendentes) {
+    await atualizarSolicitacaoPagamento(c.id, { status: 'cancelada' });
+  }
+  toast('Contestação enviada ao administrador.');
+};
+
+window.abrirHistoricoFechamentos = function() {
+  const meus = meusFechamentosOrdenados();
+  const el = document.getElementById('lista-historico-fechamentos');
+  el.innerHTML = meus.length ? meus.map((f, idx) => {
+    const statusCliente = f.statusCliente || 'pendente';
+    const sc = statusCliente === 'aceito' ? chip('Aceito','green') : statusCliente === 'contestado' ? chip('Contestado','red') : chip('Pendente','yellow');
+    return `<div class="row-item" style="cursor:pointer" onclick="selecionarFechamentoHistorico(${idx})">
+      <div class="row-info"><div class="row-title">${f.periodoInicio} a ${f.periodoFim}</div><div class="row-meta">${fmtBRL(f.totalReceber||0)}</div></div>
+      ${sc}
+    </div>`;
+  }).join('') : `<div class="empty"><i class="ti ti-history-off"></i><p>Nenhum fechamento no histórico.</p></div>`;
+  window.showModal('modal-historico-fechamentos');
+};
+
+window.selecionarFechamentoHistorico = function(idx) {
+  fechamentoSelecionadoIdx = idx;
+  window.closeModal('modal-historico-fechamentos');
+  renderFinanceiro();
+};
+
 function renderFinanceiro() {
   const el = document.getElementById('lista-financeiro');
   const todas = window._todasEtapas || [];
   if (!db_obras.length) { el.innerHTML = `<div class="empty"><i class="ti ti-cash-off"></i><p>Nenhuma obra encontrada.</p></div>`; return; }
 
   let totalGeralObra = 0, totalGeralPago = 0;
-  const fechamentoMaisRecente = db_fechamentos[0];
-  const resumoFechamentoHTML = fechamentoMaisRecente ? `
-    <div class="card" style="margin-bottom:12px;border-left:4px solid var(--brand)">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-        <div style="font-size:15px;font-weight:600">Resumo do último fechamento</div>
-        <span class="chip chip-green">${fechamentoMaisRecente.periodoInicio || '—'} · ${fechamentoMaisRecente.periodoFim || '—'}</span>
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-        <div class="stat"><span class="stat-val" style="font-size:13px">${fmtBRL(fechamentoMaisRecente.totalReceber || 0)}</span><span class="stat-lbl">Recebido</span></div>
-        <div class="stat"><span class="stat-val" style="font-size:13px">${fmtBRL(fechamentoMaisRecente.totalRepasse || 0)}</span><span class="stat-lbl">Repasses</span></div>
-        <div class="stat"><span class="stat-val" style="font-size:13px">${fmtBRL(fechamentoMaisRecente.totalEncargos || 0)}</span><span class="stat-lbl">Encargos</span></div>
-        <div class="stat"><span class="stat-val" style="font-size:13px;color:var(--brand)">${fmtBRL(fechamentoMaisRecente.lucro || 0)}</span><span class="stat-lbl">Lucro</span></div>
-      </div>
-    </div>` : '';
+  const meusFechamentos = meusFechamentosOrdenados();
+  const resumoFechamentoHTML = renderResumoFechamentos(meusFechamentos);
   const html = db_obras.map(o => {
     const etapas = todas.filter(e => e.obraId === o.id);
     const totalObra = etapas.reduce((s, e) => s + parseBRL(e.val), 0);
@@ -575,6 +664,75 @@ function renderPrecos() {
   if (!db_precos.length) { el.innerHTML = `<div class="empty"><i class="ti ti-receipt-off"></i><p>Nenhum preço cadastrado.</p></div>`; return; }
   el.innerHTML = db_precos.map(p => `<div class="price-row"><span class="price-name">${p.nome}</span><span class="price-val">R$ ${p.val}/m²</span></div>`).join('');
 }
+
+// ============================================================
+// SIMULAÇÃO DE ORÇAMENTO
+// ============================================================
+let simulacaoItens = [];
+
+function popularSelectSimulacao() {
+  const sel = document.getElementById('sim-tipo-servico'); if (!sel) return;
+  sel.innerHTML = `<option value="">Selecione...</option>`;
+  db_precos.forEach(p => { const o = document.createElement('option'); o.value = p.id; o.textContent = `${p.nome} — R$ ${p.val}/m²`; sel.appendChild(o); });
+  renderSimItens();
+}
+
+window.adicionarItemSimulacao = function() {
+  const precoId = document.getElementById('sim-tipo-servico').value;
+  const m2 = parseFloat((document.getElementById('sim-m2').value || '0').replace(',', '.'));
+  if (!precoId) { toast('Selecione o serviço'); return; }
+  if (!m2 || m2 <= 0) { toast('Informe a metragem'); return; }
+  const preco = db_precos.find(p => p.id === precoId);
+  if (!preco) return;
+  const valorM2 = parseBRL(preco.val);
+  simulacaoItens.push({ tipo: preco.nome, valorM2, m2, subtotal: valorM2 * m2 });
+  document.getElementById('sim-m2').value = '';
+  renderSimItens();
+};
+
+window.removerItemSimulacao = function(index) {
+  simulacaoItens.splice(index, 1);
+  renderSimItens();
+};
+
+function renderSimItens() {
+  const el = document.getElementById('lista-sim-itens');
+  const totalEl = document.getElementById('sim-total');
+  if (!el) return;
+  el.innerHTML = simulacaoItens.length ? simulacaoItens.map((it, i) => `
+    <div class="row-item">
+      <div class="row-info"><div class="row-title">${it.tipo}</div><div class="row-meta">${it.m2}m² × ${fmtBRL(it.valorM2)}</div></div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="font-size:13px;font-weight:600;color:var(--text-success)">${fmtBRL(it.subtotal)}</span>
+        <button class="btn-sm btn-danger" onclick="removerItemSimulacao(${i})"><i class="ti ti-trash"></i></button>
+      </div>
+    </div>`).join('') : `<div class="empty"><i class="ti ti-list-numbers"></i><p>Nenhum item adicionado ainda.</p></div>`;
+  const total = simulacaoItens.reduce((s, it) => s + it.subtotal, 0);
+  if (totalEl) totalEl.textContent = fmtBRL(total);
+}
+
+window.solicitarObraSimulada = async function() {
+  const nomeObraDesejada = document.getElementById('sim-nome-obra').value.trim();
+  if (!nomeObraDesejada) { toast('Informe o nome da obra desejada'); return; }
+  if (!simulacaoItens.length) { toast('Adicione ao menos um item na simulação'); return; }
+  const total = simulacaoItens.reduce((s, it) => s + it.subtotal, 0);
+  if (!confirm(`Deseja solicitar a obra "${nomeObraDesejada}" com valor estimado de ${fmtBRL(total)}?`)) return;
+  try {
+    await criarSolicitacao({
+      tipo: 'simulacao_orcamento',
+      clienteId: usuarioAtual.uid, clienteNome: usuarioAtual.nome || '',
+      nomeObraDesejada,
+      etapasSimuladas: simulacaoItens.slice(),
+      valorTotalSimulado: total,
+      desc: `Simulação de orçamento: ${simulacaoItens.map(i => `${i.tipo} (${i.m2}m²)`).join(', ')}`
+    });
+    simulacaoItens = [];
+    document.getElementById('sim-nome-obra').value = '';
+    renderSimItens();
+    toast('Solicitação enviada! Aguarde o administrador aceitar.');
+    window.goPage('obras');
+  } catch (e) { toast('Erro ao enviar solicitação'); console.error(e); }
+};
 
 // ============================================================
 // PAGAMENTOS DO CLIENTE
@@ -831,4 +989,59 @@ window.contestarCobranca = async function() {
     toast('Contestação enviada ao administrador.');
   } catch(e) { toast('Erro ao enviar'); console.error(e); }
   btn.disabled = false; btn.textContent = 'Enviar contestação';
+};
+
+// ============================================================
+// PERFIL
+// ============================================================
+function preencherPerfil() {
+  document.getElementById('perfil-nome').value = usuarioAtual.nome || '';
+  document.getElementById('perfil-telefone').value = usuarioAtual.telefone || '';
+  document.getElementById('perfil-novo-email').value = '';
+  document.getElementById('perfil-senha-email').value = '';
+  document.getElementById('perfil-senha-atual').value = '';
+  document.getElementById('perfil-senha-nova').value = '';
+  document.getElementById('perfil-senha-nova-confirma').value = '';
+}
+
+window.salvarDadosPerfil = async function() {
+  const nome = document.getElementById('perfil-nome').value.trim();
+  const telefone = document.getElementById('perfil-telefone').value.trim();
+  if (!nome) { toast('Informe o nome'); return; }
+  try {
+    await atualizarPerfilUsuario(usuarioAtual.uid, { nome, telefone });
+    usuarioAtual.nome = nome; usuarioAtual.telefone = telefone;
+    document.getElementById('topbar-sub').textContent = nome;
+    toast('Dados atualizados!');
+  } catch (e) { toast('Erro ao salvar dados'); console.error(e); }
+};
+
+window.salvarTrocaEmail = async function() {
+  const novoEmail = document.getElementById('perfil-novo-email').value.trim();
+  const senha = document.getElementById('perfil-senha-email').value;
+  if (!novoEmail) { toast('Informe o novo e-mail'); return; }
+  if (!senha) { toast('Informe a senha atual'); return; }
+  try {
+    await trocarEmailConta(senha, novoEmail);
+    usuarioAtual.email = novoEmail;
+    document.getElementById('perfil-novo-email').value = '';
+    document.getElementById('perfil-senha-email').value = '';
+    toast('E-mail atualizado!');
+  } catch (e) { toast(mensagemErroFirebase(e)); console.error(e); }
+};
+
+window.salvarTrocaSenha = async function() {
+  const senhaAtual = document.getElementById('perfil-senha-atual').value;
+  const novaSenha = document.getElementById('perfil-senha-nova').value;
+  const confirma = document.getElementById('perfil-senha-nova-confirma').value;
+  if (!senhaAtual) { toast('Informe a senha atual'); return; }
+  if (!novaSenha || novaSenha.length < 6) { toast('A nova senha precisa ter pelo menos 6 caracteres'); return; }
+  if (novaSenha !== confirma) { toast('As senhas não coincidem'); return; }
+  try {
+    await trocarSenha(senhaAtual, novaSenha);
+    document.getElementById('perfil-senha-atual').value = '';
+    document.getElementById('perfil-senha-nova').value = '';
+    document.getElementById('perfil-senha-nova-confirma').value = '';
+    toast('Senha alterada!');
+  } catch (e) { toast(mensagemErroFirebase(e)); console.error(e); }
 };

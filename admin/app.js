@@ -17,7 +17,9 @@ import {
   escutarSolicitacoes, atualizarSolicitacao,
   escutarPagamentosCliente, atualizarPagamentoCliente,
   criarSolicitacaoPagamento, escutarSolicitacoesPagamento, atualizarSolicitacaoPagamento,
-  criarFechamentoCaixa, escutarFechamentosCaixa,
+  criarFechamentoCaixa, escutarFechamentosCaixa, atualizarFechamentoCaixa,
+  atualizarDadosInternosFechamento, obterDadosInternosFechamento,
+  obterConfigPagamento, salvarConfigPagamento,
   criarNotificacaoParceiro, escutarNotificacoesParceiro, atualizarNotificacaoParceiro,
   notificarWhatsApp,
   criarNotificacao, enviarOrcamento, escutarOrcamentos,
@@ -46,6 +48,12 @@ let unsubEtapasAtivas = null, unsubTodasEtapas = null, unsubEncargos = null, uns
 let encargoSnapshot = {};
 let fechamentoDespesasExtras = [];
 let fechamentoDespesasConfirmadas = [];
+let configPagamentoCache = null;
+let fechamentoEtapasRemovidas = new Set();
+let fechamentoEtapasManuais = [];
+let fechamentoChaveAtual = null;
+let fechamentoEmEdicaoId = null;
+let obraDetalheOrigem = 'obras';
 
 function iniciarApp() {
   escutarObras(obras => {
@@ -81,7 +89,7 @@ function iniciarApp() {
   escutarDiarias(d => { db_diarias = d; renderDiarias(); });
   escutarPagamentosCliente(p => { db_pagamentosAdmin = p; updateBadgePagamentos(); renderPagamentosAdmin(); });
   escutarSolicitacoesPagamento(s => { db_solicitacoesPagamento = s; renderContestacoes(); updateBadge(); });
-  escutarFechamentosCaixa(f => { db_fechamentos = f; renderFechamentoCaixa(); });
+  escutarFechamentosCaixa(f => { db_fechamentos = f; renderFechamentoCaixa(); renderFechamentosContestados(); updateBadge(); });
   escutarOrcamentos(o => {
     db_orcamentos = o;
     renderAprovacao();
@@ -172,6 +180,14 @@ function popularSelectClientes() {
   sel.innerHTML = `<option value="">Sem cliente vinculado</option>`;
   db_clientes.filter(c => c.status === 'aprovado').forEach(c => { const o = document.createElement('option'); o.value = c.id; o.textContent = c.nome; sel.appendChild(o); });
   sel.value = atual;
+
+  const selFechamento = document.getElementById('fechamento-cliente');
+  if (selFechamento) {
+    const atualFechamento = selFechamento.value;
+    selFechamento.innerHTML = `<option value="">Selecione o cliente...</option>`;
+    db_clientes.filter(c => c.status === 'aprovado').forEach(c => { const o = document.createElement('option'); o.value = c.id; o.textContent = c.nome; selFechamento.appendChild(o); });
+    selFechamento.value = atualFechamento;
+  }
 }
 
 // Sobrescreve o onclick do botão nova obra para popular o select antes de abrir
@@ -190,7 +206,7 @@ window.abrirModalNovaObra = function() {
   document.getElementById('obra-cliente').value = '';
   window.showModal('modal-nova-obra');
 };
-const TITULOS = { obras:'Painel Admin', execucao:'Em execução', aprovacao:'Notificações', parceiros:'Parceiros', mais:'Mais opções', precos:'Tabela de preços', repasse:'Tabela de repasse', diarias:'Tabela de diárias', lixeira:'Lixeira', fechamento:'Fechamento de caixa', clientes:'Clientes', admins:'Administradores', solicitacoes:'Solicitações', 'pagamentos-cli':'Pagamentos dos clientes' };
+const TITULOS = { obras:'Painel Admin', execucao:'Em execução', aprovacao:'Notificações', parceiros:'Parceiros', mais:'Mais opções', precos:'Tabela de preços', repasse:'Tabela de repasse', diarias:'Tabela de diárias', lixeira:'Lixeira', fechamento:'Fechamento de caixa', clientes:'Clientes', admins:'Administradores', solicitacoes:'Solicitações', 'pagamentos-cli':'Pagamentos dos clientes', 'opcoes-pagamento':'Opções de pagamento' };
 
 window.goPage = function(p) {
   document.querySelectorAll('.page').forEach(x => x.classList.remove('active'));
@@ -230,24 +246,129 @@ window.abrirFechamentoCaixa = function() {
   renderFechamentoCaixa();
 };
 
-async function renderFechamentoCaixa() {
-  const resumoEl = document.getElementById('fechamento-resumo');
-  const itensEl = document.getElementById('fechamento-itens');
-  const extrasEl = document.getElementById('fechamento-extras-lista');
-  if (!resumoEl || !itensEl || !extrasEl) return;
+function fmtDataCurta(v) {
+  if (!v) return '00/00';
+  const [y, m, d] = String(v).slice(0, 10).split('-');
+  return `${d}/${m}`;
+}
 
+function detalheDiariaTexto(e) {
+  if (!(e.isDiaria || e.isDiariaAvulsa) || !Array.isArray(e.linhasDiarias) || !e.linhasDiarias.length) return '';
+  return ' - ' + e.linhasDiarias.map(l => `${l.qtd} ${l.nome}`).join(' - ');
+}
+
+function getEtapasFechamento(clienteId, inicio, fim) {
+  const etapasPeriodo = (window._todasEtapas || []).filter(e => e.clienteId === clienteId && e.status === 'concluido' && estaNoPeriodo(e.dataConc, inicio, fim) && !fechamentoEtapasRemovidas.has(e.id));
+  const etapasManuaisValidas = fechamentoEtapasManuais.filter(e => e.clienteId === clienteId);
+  return [...etapasPeriodo, ...etapasManuaisValidas];
+}
+
+window.removerEtapaFechamento = function(etapaId, manual) {
+  if (manual) fechamentoEtapasManuais = fechamentoEtapasManuais.filter(e => e.id !== etapaId);
+  else fechamentoEtapasRemovidas.add(etapaId);
+  renderFechamentoCaixa();
+};
+
+window.adicionarEtapaManualFechamento = function() {
+  const clienteId = document.getElementById('fechamento-cliente')?.value || '';
+  const etapaId = document.getElementById('fechamento-add-etapa-select')?.value || '';
+  const motivo = document.getElementById('fechamento-add-etapa-motivo')?.value.trim() || '';
+  if (!clienteId) { toast('Selecione o cliente'); return; }
+  if (!etapaId) { toast('Selecione a etapa'); return; }
+  if (!motivo) { toast('Informe o motivo da inclusão'); return; }
+  const etapa = (window._todasEtapas || []).find(e => e.id === etapaId);
+  if (!etapa) return;
+  if (fechamentoEtapasManuais.some(e => e.id === etapaId)) { toast('Etapa já incluída'); return; }
+  fechamentoEtapasManuais.push({ ...etapa, motivo, manual: true });
+  document.getElementById('fechamento-add-etapa-motivo').value = '';
+  renderFechamentoCaixa();
+};
+
+function renderFechamentoPreview(etapas) {
+  if (!etapas.length) return `<div class="empty"><i class="ti ti-clipboard-check"></i><p>Nenhuma obra com etapas concluídas neste período.</p></div>`;
+  const porObra = {};
+  etapas.forEach(e => {
+    if (!porObra[e.obraId]) porObra[e.obraId] = { obraId: e.obraId, obraNome: e.obraNome || 'Obra sem nome', itens: [] };
+    porObra[e.obraId].itens.push(e);
+  });
+  return Object.values(porObra).map(g => {
+    const todasDaObra = (window._todasEtapas || []).filter(x => x.obraId === g.obraId);
+    const concl = todasDaObra.filter(x => x.status === 'concluido').length;
+    const pct = todasDaObra.length ? Math.round(concl / todasDaObra.length * 100) : 0;
+    const linhas = g.itens.map(e => `
+      <div class="fechamento-row">
+        <span class="fechamento-row-label">${e.tipo || 'Item'}${e.isDiaria || e.isDiariaAvulsa ? ' (diária)' : ''} — ${e.manual ? `🕒 em execução, incluída manualmente: ${e.motivo}` : `concluído dia ${fmtDataCurta(e.dataConc)}`}${detalheDiariaTexto(e)}</span>
+        <span class="fechamento-row-value">${fmtBRL(parseBRL(e.val))} <button class="btn-sm btn-danger" style="padding:2px 6px;margin-left:6px" onclick="removerEtapaFechamento('${e.id}', ${!!e.manual})" title="Remover do fechamento"><i class="ti ti-x"></i></button></span>
+      </div>`).join('');
+    return `<div class="fechamento-section neutral" style="margin-bottom:8px">
+      <div class="fechamento-section-header neutral" style="cursor:pointer" onclick="abrirObra('${g.obraId}', 'fechamento')">
+        <i class="ti ti-building"></i> ${g.obraNome} — ${pct}% concluída
+      </div>
+      <div class="fechamento-table">${linhas}</div>
+    </div>`;
+  }).join('');
+}
+
+function renderDespesasRepasses(etapasPeriodo) {
+  const porObra = {};
+  etapasPeriodo.forEach(e => {
+    const linhas = Array.isArray(e.parceiros) && e.parceiros.length
+      ? e.parceiros.filter(p => parseBRL(p.repasse)).map(p => ({ etapaTipo: e.tipo, parceiroNome: p.nome || 'Parceiro', valor: parseBRL(p.repasse) }))
+      : (e.valRepasse ? [{ etapaTipo: e.tipo, parceiroNome: e.parceiroNome || 'Parceiro não identificado', valor: parseBRL(e.valRepasse) }] : []);
+    if (!linhas.length) return;
+    if (!porObra[e.obraId]) porObra[e.obraId] = { obraNome: e.obraNome || 'Obra sem nome', linhas: [] };
+    porObra[e.obraId].linhas.push(...linhas);
+  });
+  const obrasHTML = Object.values(porObra).map(g => `
+    <div style="margin-bottom:10px">
+      <div style="font-weight:600;font-size:13px;margin-bottom:4px">${g.obraNome}</div>
+      ${g.linhas.map(l => `<div class="row-item"><div class="row-title" style="font-size:12px">${l.etapaTipo}, repasse "${l.parceiroNome}"</div><div style="font-size:13px;font-weight:600;color:var(--text-danger)">${fmtBRL(l.valor)}</div></div>`).join('')}
+    </div>`).join('') || `<div class="empty"><i class="ti ti-users-off"></i><p>Nenhum repasse no período.</p></div>`;
+  const totalExtras = fechamentoDespesasConfirmadas.reduce((s, e) => s + parseBRL(e.valor), 0);
+  return obrasHTML + `<div class="fechamento-row subtotal"><span class="fechamento-row-label strong">Despesas extras</span><span class="fechamento-row-value strong">${fmtBRL(totalExtras)}</span></div>`;
+}
+
+window.renderFechamentoCaixa = renderFechamentoCaixa;
+async function renderFechamentoCaixa() {
+  const previewEl = document.getElementById('fechamento-preview');
+  const resumoEl = document.getElementById('fechamento-resumo');
+  const despesasEl = document.getElementById('fechamento-despesas-repasses');
+  const extrasEl = document.getElementById('fechamento-extras-lista');
+  const lucroEl = document.getElementById('fechamento-lucro-final');
+  const addEtapaSel = document.getElementById('fechamento-add-etapa-select');
+  if (!previewEl || !resumoEl || !despesasEl || !extrasEl || !lucroEl) return;
+
+  const clienteId = document.getElementById('fechamento-cliente')?.value || '';
   const inicio = document.getElementById('fechamento-data-inicio')?.value || '';
   const fim = document.getElementById('fechamento-data-fim')?.value || '';
-  const etapasPeriodo = (window._todasEtapas || []).filter(e => e.status === 'concluido' && estaNoPeriodo(e.dataConc, inicio, fim));
-  const etapasConcluidas = etapasPeriodo.filter(e => !e.isDiaria && !e.isDiariaAvulsa);
-  const diariasPeriodo = etapasPeriodo.filter(e => e.isDiaria || e.isDiariaAvulsa);
+
+  const chave = `${clienteId}|${inicio}|${fim}`;
+  if (fechamentoChaveAtual !== chave) {
+    fechamentoChaveAtual = chave;
+    fechamentoEtapasRemovidas = new Set();
+    fechamentoEtapasManuais = [];
+  }
+
+  if (!clienteId) {
+    previewEl.innerHTML = `<div class="empty"><i class="ti ti-user-question"></i><p>Selecione um cliente para calcular o fechamento.</p></div>`;
+    resumoEl.innerHTML = '';
+    despesasEl.innerHTML = '';
+    extrasEl.innerHTML = '';
+    lucroEl.innerHTML = '';
+    if (addEtapaSel) addEtapaSel.innerHTML = `<option value="">Selecione um cliente primeiro</option>`;
+    return;
+  }
+
+  const etapas = getEtapasFechamento(clienteId, inicio, fim);
+  const etapasConcluidas = etapas.filter(e => !e.isDiaria && !e.isDiariaAvulsa);
+  const diariasPeriodo = etapas.filter(e => e.isDiaria || e.isDiariaAvulsa);
 
   const valorEtapas = etapasConcluidas.reduce((s, e) => s + parseBRL(e.val), 0);
   const valorDiarias = diariasPeriodo.reduce((s, e) => s + parseBRL(e.val), 0);
   const valorGanhos = valorEtapas + valorDiarias;
 
   const parceirosResumo = {};
-  etapasPeriodo.forEach(e => {
+  etapas.forEach(e => {
     const lista = Array.isArray(e.parceiros) && e.parceiros.length ? e.parceiros : [];
     if (lista.length) {
       lista.forEach(p => {
@@ -265,13 +386,22 @@ async function renderFechamentoCaixa() {
   });
   const valorRepasse = Object.values(parceirosResumo).reduce((s, p) => s + p.valor, 0);
 
-  const encargosPeriodo = db_encargos.filter(e => estaNoPeriodo(e.criadoEm, inicio, fim));
+  const encargosPeriodo = db_encargos.filter(e => estaNoPeriodo(e.criadoEm, inicio, fim) && (db_obras.find(o => o.id === e.obraId) || {}).clienteId === clienteId);
   const valorEncargos = encargosPeriodo.reduce((s, e) => s + parseBRL(e.valor), 0);
   const valorExtrasConfirmados = fechamentoDespesasConfirmadas.reduce((s, e) => s + parseBRL(e.valor), 0);
   const valorDespesas = valorRepasse + valorExtrasConfirmados;
   const lucro = valorGanhos - valorDespesas;
   const valorReceberCliente = valorGanhos + valorEncargos;
-  const fechamentoExistente = db_fechamentos.find(f => f.periodoInicio === inicio && f.periodoFim === fim);
+  const fechamentoExistente = fechamentoEmEdicaoId ? null : db_fechamentos.find(f => f.clienteId === clienteId && f.periodoInicio === inicio && f.periodoFim === fim);
+
+  previewEl.innerHTML = `<div class="card"><div class="sec-title" style="margin-bottom:8px">Prévia por obra</div>${renderFechamentoPreview(etapas)}</div>`;
+
+  if (addEtapaSel) {
+    const disponiveis = (window._todasEtapas || []).filter(e => e.clienteId === clienteId && e.status === 'execucao' && !fechamentoEtapasManuais.some(m => m.id === e.id));
+    addEtapaSel.innerHTML = disponiveis.length
+      ? `<option value="">Selecione a etapa...</option>` + disponiveis.map(e => `<option value="${e.id}">${e.tipo} — ${e.obraNome}${e.val ? ' · ' + fmtBRL(parseBRL(e.val)) : ''}</option>`).join('')
+      : `<option value="">Nenhuma etapa em execução</option>`;
+  }
 
   const renderLinhaResumo = (label, valor, isSubtotal = false) => `
     <div class="fechamento-row${isSubtotal ? ' subtotal' : ''}">
@@ -286,25 +416,16 @@ async function renderFechamentoCaixa() {
           <div class="fechamento-title">Resumo do período</div>
           <div class="fechamento-periodo">${inicio || '—'}${fim ? ` até ${fim}` : ''}</div>
         </div>
-        <button class="btn-sm btn-success" onclick="salvarFechamentoCaixa('${inicio}','${fim}',${valorReceberCliente},${valorRepasse},${valorEncargos},${valorDiarias},${valorEtapas},${valorExtrasConfirmados},${lucro})"><i class="ti ti-device-floppy"></i> Salvar fechamento</button>
+        <button class="btn-sm btn-success" onclick="salvarFechamentoCaixa('${clienteId}','${inicio}','${fim}',${valorReceberCliente},${valorRepasse},${valorEncargos},${valorDiarias},${valorEtapas},${valorExtrasConfirmados},${lucro})"><i class="ti ti-device-floppy"></i> ${fechamentoEmEdicaoId ? 'Salvar edição' : 'Salvar fechamento'}</button>
       </div>
 
       <div class="fechamento-summary-stack">
         <div class="fechamento-section success">
           <div class="fechamento-section-header success">Ganhos</div>
           <div class="fechamento-table">
-            ${renderLinhaResumo('Etapas concluídas', valorEtapas)}
-            ${renderLinhaResumo('Diárias', valorDiarias)}
-            ${renderLinhaResumo('Subtotal de ganhos', valorGanhos, true)}
-          </div>
-        </div>
-
-        <div class="fechamento-section danger">
-          <div class="fechamento-section-header danger">Despesas</div>
-          <div class="fechamento-table">
-            ${renderLinhaResumo('Repasses', valorRepasse)}
-            ${renderLinhaResumo('Despesas extras confirmadas', valorExtrasConfirmados)}
-            ${renderLinhaResumo('Subtotal de despesas', valorDespesas, true)}
+            ${renderLinhaResumo('Total geral de etapas', valorEtapas)}
+            ${renderLinhaResumo('Total geral de diárias', valorDiarias)}
+            ${renderLinhaResumo('Total geral', valorGanhos, true)}
           </div>
         </div>
 
@@ -314,35 +435,19 @@ async function renderFechamentoCaixa() {
         </div>
 
         <div class="fechamento-kpi">
-          <div class="fechamento-kpi-label">Valor total a receber do cliente</div>
+          <div class="fechamento-kpi-label">Total geral (valor a receber do cliente)</div>
           <div class="fechamento-kpi-value">${fmtBRL(valorReceberCliente)}</div>
         </div>
-
-        <div class="fechamento-kpi profit ${lucro >= 0 ? 'positive' : 'negative'}">
-          <div class="fechamento-kpi-label">Lucro geral</div>
-          <div class="fechamento-kpi-value">${fmtBRL(lucro)}</div>
-        </div>
-      </div>
-
-      <div class="divider"></div>
-      <div style="font-size:13px;font-weight:600;margin-bottom:8px;padding:0 14px">Parceiros e saldo devedor</div>
-      <div style="padding:0 14px 14px">
-        ${Object.values(parceirosResumo).length ? Object.values(parceirosResumo).map(p => `<div class="row-item"><div class="row-info"><div class="row-title">${p.nome}</div></div><div style="font-size:13px;font-weight:600;color:var(--text-danger)">${fmtBRL(p.valor)}</div></div>`).join('') : `<div class="empty"><i class="ti ti-users-off"></i><p>Nenhum repasse para parceiros neste período.</p></div>`}
       </div>
     </div>`;
 
-  itensEl.innerHTML = etapasPeriodo.length ? etapasPeriodo.map(e => `
-    <div class="row-item">
-      <div class="row-info">
-        <div class="row-title">${e.tipo || 'Item'}</div>
-        <div class="row-meta">${e.obraNome || 'Obra sem nome'} · ${e.isDiaria || e.isDiariaAvulsa ? 'Diária' : 'Etapa concluída'}</div>
-      </div>
-      <div style="font-size:13px;font-weight:600;color:var(--text-success)">${fmtBRL(parseBRL(e.val))}</div>
-    </div>`).join('') : `<div class="empty"><i class="ti ti-clipboard-check"></i><p>Nenhum item concluído neste período.</p></div>`;
-
-  if (fechamentoExistente) {
-    resumoEl.innerHTML += `<div class="alert-box alert-success" style="margin-top:8px"><i class="ti ti-check"></i> Fechamento já salvo para este período.</div>`;
+  if (fechamentoEmEdicaoId) {
+    resumoEl.innerHTML += `<div class="alert-box alert-warning" style="margin-top:8px"><i class="ti ti-edit"></i> Editando fechamento contestado pelo cliente — ao salvar, ele será notificado de novo.</div>`;
+  } else if (fechamentoExistente) {
+    resumoEl.innerHTML += `<div class="alert-box alert-success" style="margin-top:8px"><i class="ti ti-check"></i> Fechamento já salvo para este cliente/período.</div>`;
   }
+
+  despesasEl.innerHTML = renderDespesasRepasses(etapas);
 
   extrasEl.innerHTML = `
     ${fechamentoDespesasExtras.length ? fechamentoDespesasExtras.map((item, index) => `
@@ -365,6 +470,11 @@ async function renderFechamentoCaixa() {
         <div style="font-size:12px;color:var(--text-muted)">Confirmada</div>
       </div>`).join('') : ''}
     ${!fechamentoDespesasExtras.length && !fechamentoDespesasConfirmadas.length ? `<div class="empty"><i class="ti ti-receipt"></i><p>Nenhuma despesa extra adicionada.</p></div>` : ''}`;
+
+  lucroEl.innerHTML = `<div class="fechamento-kpi profit ${lucro >= 0 ? 'positive' : 'negative'}">
+    <div class="fechamento-kpi-label">Total lucro no período de ${fmtDataCurta(inicio)} à ${fmtDataCurta(fim)}</div>
+    <div class="fechamento-kpi-value">${fmtBRL(lucro)}</div>
+  </div>`;
 }
 
 window.adicionarDespesaExtra = function() {
@@ -390,43 +500,182 @@ window.removerDespesaExtra = function(index, tipo = 'pendente') {
   renderFechamentoCaixa();
 };
 
-window.salvarFechamentoCaixa = async function(inicio, fim, totalReceber, totalRepasse, totalEncargos, totalDiarias, totalEtapas, totalExtras, lucro) {
+window.salvarFechamentoCaixa = async function(clienteId, inicio, fim, totalReceber, totalRepasse, totalEncargos, totalDiarias, totalEtapas, totalExtras, lucro) {
+  if (!clienteId) { toast('Selecione o cliente'); return; }
   if (!inicio || !fim) { toast('Informe as datas do período'); return; }
-  const existente = db_fechamentos.find(f => f.periodoInicio === inicio && f.periodoFim === fim);
-  if (existente) { toast('Este fechamento já foi salvo'); return; }
-  const payload = {
-    periodoInicio: inicio,
-    periodoFim: fim,
-    totalReceber,
-    totalRepasse,
-    totalEncargos,
-    totalDiarias,
-    totalEtapas,
-    totalExtras,
-    lucro,
-    itens: (window._todasEtapas || []).filter(e => e.status === 'concluido' && estaNoPeriodo(e.dataConc, inicio, fim)).map(e => ({ id: e.id, tipo: e.tipo, valor: e.val, obraId: e.obraId, obraNome: e.obraNome, isDiaria: !!(e.isDiaria || e.isDiariaAvulsa) })),
-    parceiros: Object.values((() => {
-      const grupos = {};
-      (window._todasEtapas || []).filter(e => e.status === 'concluido' && estaNoPeriodo(e.dataConc, inicio, fim)).forEach(e => {
-        const lista = Array.isArray(e.parceiros) && e.parceiros.length ? e.parceiros : [];
-        if (lista.length) {
-          lista.forEach(p => {
-            const key = p.parceiroId || p.nome;
-            if (!grupos[key]) grupos[key] = { parceiroId: p.parceiroId || null, nome: p.nome || 'Parceiro', valor: 0 };
-            grupos[key].valor += parseBRL(p.repasse);
-          });
-        } else if (e.valRepasse) {
-          const key = e.parceiroNome || 'Parceiro não identificado';
-          if (!grupos[key]) grupos[key] = { parceiroId: e.parceiroId || null, nome: key, valor: 0 };
-          grupos[key].valor += parseBRL(e.valRepasse);
-        }
-      });
-      return grupos;
-    })())
+  if (!fechamentoEmEdicaoId) {
+    const existente = db_fechamentos.find(f => f.clienteId === clienteId && f.periodoInicio === inicio && f.periodoFim === fim);
+    if (existente) { toast('Este fechamento já foi salvo para este cliente/período'); return; }
+  }
+  if (!confirm('Deseja salvar este fechamento?')) return;
+
+  const cliente = db_clientes.find(c => c.id === clienteId);
+  const etapasSalvas = getEtapasFechamento(clienteId, inicio, fim);
+
+  const itens = etapasSalvas.map(e => ({ id: e.id, tipo: e.tipo, valor: e.val, obraId: e.obraId, obraNome: e.obraNome, isDiaria: !!(e.isDiaria || e.isDiariaAvulsa), dataConc: e.dataConc || null, manual: !!e.manual, motivo: e.manual ? e.motivo : null, detalheDiaria: detalheDiariaTexto(e) }));
+
+  const despesasRepasse = [];
+  etapasSalvas.forEach(e => {
+    const lista = Array.isArray(e.parceiros) && e.parceiros.length ? e.parceiros : null;
+    if (lista) {
+      lista.forEach(p => { if (parseBRL(p.repasse)) despesasRepasse.push({ obraId: e.obraId, obraNome: e.obraNome, etapaTipo: e.tipo, parceiroNome: p.nome || 'Parceiro', valor: parseBRL(p.repasse) }); });
+    } else if (e.valRepasse) {
+      despesasRepasse.push({ obraId: e.obraId, obraNome: e.obraNome, etapaTipo: e.tipo, parceiroNome: e.parceiroNome || 'Parceiro não identificado', valor: parseBRL(e.valRepasse) });
+    }
+  });
+
+  const observacaoCliente = document.getElementById('fechamento-obs-cliente')?.value.trim() || '';
+  const observacaoInterna = document.getElementById('fechamento-obs-interna')?.value.trim() || '';
+
+  const dadosPublicos = { clienteId, clienteNome: cliente?.nome || '', periodoInicio: inicio, periodoFim: fim, totalReceber, itens, observacaoCliente, statusEnvio: 'pendente', statusCliente: 'pendente' };
+  const dadosInternos = { totalRepasse, totalEncargos, totalDiarias, totalEtapas, totalExtras, lucro, despesasRepasse, despesasExtras: fechamentoDespesasConfirmadas.slice(), observacaoInterna };
+
+  let fechamentoId;
+  if (fechamentoEmEdicaoId) {
+    fechamentoId = fechamentoEmEdicaoId;
+    await atualizarFechamentoCaixa(fechamentoId, dadosPublicos);
+    await atualizarDadosInternosFechamento(fechamentoId, dadosInternos);
+    fechamentoEmEdicaoId = null;
+  } else {
+    fechamentoId = await criarFechamentoCaixa(dadosPublicos, dadosInternos);
+  }
+
+  fechamentoDespesasExtras = [];
+  fechamentoDespesasConfirmadas = [];
+  fechamentoEtapasRemovidas = new Set();
+  fechamentoEtapasManuais = [];
+  toast('Fechamento salvo');
+
+  window.abrirOpcoesPagamento(fechamentoId);
+};
+
+window.abrirOpcoesPagamento = async function(highlightId) {
+  window.goPage('opcoes-pagamento');
+  if (!configPagamentoCache) configPagamentoCache = await obterConfigPagamento();
+  const cfg = configPagamentoCache || {};
+  document.getElementById('op-forma-sugerida').value = cfg.formaSugerida || 'pix';
+  document.getElementById('op-pix-tipo').value = cfg.pix?.tipo || 'cpf';
+  document.getElementById('op-pix-chave').value = cfg.pix?.chave || '';
+  document.getElementById('op-pix-nome').value = cfg.pix?.nome || '';
+  document.getElementById('op-pix-banco').value = cfg.pix?.banco || '';
+
+  const banner = document.getElementById('op-banner-pendente');
+  const pendentes = db_fechamentos.filter(f => f.statusEnvio === 'pendente');
+  banner.innerHTML = pendentes.length ? pendentes.map(f => `
+    <div class="alert-box alert-warning" style="margin-bottom:8px${f.id === highlightId ? ';border-width:2px' : ''}">
+      <div><i class="ti ti-alert-circle"></i> Fechamento de <strong>${f.clienteNome}</strong> (${fmtDataCurta(f.periodoInicio)} a ${fmtDataCurta(f.periodoFim)}) — ${fmtBRL(f.totalReceber || 0)}</div>
+      <button class="btn-sm btn-success" style="margin-top:8px" onclick="confirmarEnvioFechamento('${f.id}')"><i class="ti ti-send"></i> Confirmar e enviar cobrança</button>
+    </div>`).join('') : `<div class="empty"><i class="ti ti-circle-check"></i><p>Nenhum fechamento aguardando envio.</p></div>`;
+};
+
+window.salvarOpcoesPagamento = async function() {
+  const dados = {
+    formaSugerida: document.getElementById('op-forma-sugerida').value,
+    pix: {
+      tipo: document.getElementById('op-pix-tipo').value,
+      chave: document.getElementById('op-pix-chave').value.trim(),
+      nome: document.getElementById('op-pix-nome').value.trim(),
+      banco: document.getElementById('op-pix-banco').value.trim()
+    }
   };
-  await criarFechamentoCaixa(payload);
-  toast('Fechamento de caixa salvo');
+  await salvarConfigPagamento(dados);
+  configPagamentoCache = dados;
+  toast('Configuração de pagamento salva');
+};
+
+window.confirmarEnvioFechamento = async function(fechamentoId) {
+  const f = db_fechamentos.find(x => x.id === fechamentoId);
+  if (!f) { toast('Fechamento não encontrado — recarregue a página'); return; }
+  const pix = {
+    tipo: document.getElementById('op-pix-tipo').value,
+    chave: document.getElementById('op-pix-chave').value.trim(),
+    nome: document.getElementById('op-pix-nome').value.trim(),
+    banco: document.getElementById('op-pix-banco').value.trim()
+  };
+  const formaPagamento = document.getElementById('op-forma-sugerida').value;
+  if (formaPagamento === 'pix' && (!pix.chave || !pix.nome)) { toast('Informe os dados do PIX'); return; }
+
+  const itensFechamento = f.itens || [];
+  const jaEmCobranca = new Set((window._todasEtapas || []).filter(e => e.statusCobranca === 'solicitacao_pagamento').map(e => e.id));
+  const itensCobraveis = itensFechamento.filter(i => !jaEmCobranca.has(i.id));
+  if (itensCobraveis.length < itensFechamento.length) toast('Algumas etapas já estavam em cobrança e foram ignoradas');
+
+  const porObra = {};
+  itensCobraveis.forEach(i => {
+    if (!porObra[i.obraId]) porObra[i.obraId] = { obraId: i.obraId, obraNome: i.obraNome, itens: [] };
+    porObra[i.obraId].itens.push(i);
+  });
+
+  for (const g of Object.values(porObra)) {
+    const total = g.itens.reduce((s, i) => s + parseBRL(i.valor), 0);
+    await criarSolicitacaoPagamento({
+      clienteId: f.clienteId, clienteNome: f.clienteNome,
+      obraId: g.obraId, obraNome: g.obraNome,
+      etapas: g.itens.map(i => ({ id: i.id, tipo: i.tipo, val: i.valor, dataConc: i.dataConc || '' })),
+      total: total.toFixed(2).replace('.', ','),
+      mensagem: `Referente ao fechamento de caixa do período ${fmtDataCurta(f.periodoInicio)} a ${fmtDataCurta(f.periodoFim)}.`,
+      pix, formaPagamento, fechamentoId: f.id
+    });
+    for (const i of g.itens) {
+      if (!i.manual) await atualizarEtapa(g.obraId, i.id, { statusCobranca: 'solicitacao_pagamento' });
+    }
+  }
+
+  await criarNotificacao({
+    clienteId: f.clienteId, tipo: 'fechamento_caixa', titulo: 'Fechamento de caixa disponível', fechamentoId: f.id,
+    mensagem: `Fechamento do período ${fmtDataCurta(f.periodoInicio)} a ${fmtDataCurta(f.periodoFim)}: total a pagar ${fmtBRL(f.totalReceber)}.${f.observacaoCliente ? ' Obs: ' + f.observacaoCliente : ''}`
+  });
+
+  await atualizarFechamentoCaixa(f.id, { statusEnvio: 'enviado', enviadoEm: new Date().toISOString() });
+
+  toast('Cobrança enviada ao cliente!');
+  window.abrirOpcoesPagamento();
+};
+
+window.reabrirFechamento = async function(fechamentoId) {
+  const f = db_fechamentos.find(x => x.id === fechamentoId);
+  if (!f) return;
+  if (!confirm('Reabrir este fechamento para edição? Ele voltará a aguardar aprovação do cliente ao ser salvo de novo.')) return;
+
+  const cobrancasCanceladas = db_solicitacoesPagamento.filter(s => s.fechamentoId === fechamentoId && s.status === 'cancelada');
+  for (const c of cobrancasCanceladas) {
+    for (const e of c.etapas || []) {
+      await atualizarEtapa(c.obraId, e.id, { statusCobranca: null });
+    }
+  }
+
+  fechamentoEmEdicaoId = f.id;
+  document.getElementById('fechamento-cliente').value = f.clienteId;
+  document.getElementById('fechamento-data-inicio').value = f.periodoInicio;
+  document.getElementById('fechamento-data-fim').value = f.periodoFim;
+  document.getElementById('fechamento-obs-cliente').value = f.observacaoCliente || '';
+  const interno = await obterDadosInternosFechamento(f.id);
+  document.getElementById('fechamento-obs-interna').value = interno?.observacaoInterna || '';
+  window.goPage('fechamento');
   renderFechamentoCaixa();
+};
+
+function renderFechamentosContestados() {
+  const contestados = db_fechamentos.filter(f => f.statusCliente === 'contestado');
+  const secao = document.getElementById('secao-fechamentos-contestados');
+  const badge = document.getElementById('badge-fechamentos-contestados');
+  if (secao) secao.style.display = contestados.length ? 'block' : 'none';
+  if (badge) badge.textContent = contestados.length > 0 ? contestados.length : '';
+  const el = document.getElementById('lista-fechamentos-contestados');
+  if (!el) return;
+  el.innerHTML = contestados.map(f => `<div class="card" style="border-color:var(--border-danger)">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
+      <div>
+        <div style="font-size:15px;font-weight:600">${fmtBRL(f.totalReceber || 0)}</div>
+        <div style="font-size:12px;color:var(--text-muted)">${f.clienteNome} · ${fmtDataCurta(f.periodoInicio)} a ${fmtDataCurta(f.periodoFim)}</div>
+      </div>
+      <span class="badge badge-rej">Contestado</span>
+    </div>
+    <div style="background:var(--bg-danger);border-radius:8px;padding:10px;margin-bottom:10px;font-size:13px;color:var(--text-danger)">
+      <i class="ti ti-message-circle"></i> <strong>Motivo:</strong> ${f.contestacaoMotivo || '—'}
+    </div>
+    <button class="btn-sm btn-success" onclick="reabrirFechamento('${f.id}')"><i class="ti ti-edit"></i> Reabrir para edição</button>
+  </div>`).join('');
 }
 
 function updateBadge() {
@@ -434,7 +683,8 @@ function updateBadge() {
   const nPagamentos = db_pagamentosAdmin.filter(p => p.status === 'pendente').length;
   const nSolicitacoes = db_solicitacoes.filter(s => s.status === 'pendente').length;
   const nContestacoes = db_solicitacoesPagamento.filter(s => s.status === 'contestada').length;
-  const total = nOrcamentos + nPagamentos + nSolicitacoes + nContestacoes;
+  const nFechamentosContestados = db_fechamentos.filter(f => f.statusCliente === 'contestado').length;
+  const total = nOrcamentos + nPagamentos + nSolicitacoes + nContestacoes + nFechamentosContestados;
   const dot = document.getElementById('dot-aprov');
   if (dot) dot.classList.toggle('show', total > 0);
 }
@@ -511,7 +761,12 @@ window.salvarObra = async function() {
   toast('Obra criada');
 };
 
-window.abrirObra = function(id) {
+window.voltarObraDetalhe = function() {
+  window.goPage(obraDetalheOrigem);
+};
+
+window.abrirObra = function(id, origem) {
+  obraDetalheOrigem = origem || 'obras';
   obraAtiva = db_obras.find(o => o.id === id);
   document.querySelectorAll('.page').forEach(x => x.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
@@ -1045,26 +1300,30 @@ function renderEtapas() {
     const repasseInfo = e.valRepasse ? ` | Repasse: R$ ${e.valRepasse}` : '';
     const margemInfo = margem !== null ? ` | Margem: ${fmtBRL(margem)}` : '';
     const pgBadge = e.status === 'concluido' ? `<span class="badge ${e.pagamento==='pago'?'badge-aprov':'badge-apagar'}" style="margin-left:4px">${e.pagamento==='pago'?'Pago':'A pagar'}</span>` : '';
-    return `<div class="row-item">
-      <div class="row-info">
-        <div class="row-title">${e.tipo}${e.isDiariaAvulsa ? ` 📅 ${e.dataDiaria || ''}` : e.isDiaria ? ' 📅' : ''}</div>
-        <div class="row-meta">${e.isDiariaAvulsa ? (e.linhasDiarias||[]).map(l=>`${l.qtd}x ${l.nome}`).join(', ') : `${e.parceiroNome}${e.val ? ' · R$ ' + e.val : ''}${e.metros ? ' · ' + e.metros + 'm²' : ''}`}${tempoReal}</div>
-        ${repasseInfo || margemInfo ? `<div style="font-size:10px;color:var(--text-accent)">${repasseInfo}${margemInfo}</div>` : ''}
-        ${e.detalheInterno ? `<div style="font-size:10px;color:var(--text-warning)">📋 ${e.detalheInterno}</div>` : ''}
-        ${e.motivo ? `<div style="font-size:10px;color:var(--text-warning)">Valor personalizado: ${e.motivo}</div>` : ''}
-        ${atrasada ? `<div style="font-size:10px;color:var(--text-danger)">Atrasada</div>` : ''}
-        ${!atrasada && dr !== null && e.status === 'execucao' ? `<div style="font-size:10px;color:var(--text-muted)">${dr >= 0 ? dr + 'd restante(s)' : 'no prazo'}</div>` : ''}
+    const temFotos = e.fotoAntes || e.fotoDepois || (e.fotosExtras || []).length;
+    return `<div class="row-item" style="flex-direction:column;align-items:stretch;gap:8px">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px">
+        <div class="row-info">
+          <div class="row-title">${e.tipo}${e.isDiariaAvulsa ? ` 📅 ${e.dataDiaria || ''}` : e.isDiaria ? ' 📅' : ''}</div>
+          <div class="row-meta">${e.isDiariaAvulsa ? (e.linhasDiarias||[]).map(l=>`${l.qtd}x ${l.nome}`).join(', ') : `${e.parceiroNome}${e.val ? ' · R$ ' + e.val : ''}${e.metros ? ' · ' + e.metros + 'm²' : ''}`}${tempoReal}</div>
+          ${repasseInfo || margemInfo ? `<div style="font-size:10px;color:var(--text-accent)">${repasseInfo}${margemInfo}</div>` : ''}
+          ${e.detalheInterno ? `<div style="font-size:10px;color:var(--text-warning)">📋 ${e.detalheInterno}</div>` : ''}
+          ${e.motivo ? `<div style="font-size:10px;color:var(--text-warning)">Valor personalizado: ${e.motivo}</div>` : ''}
+          ${atrasada ? `<div style="font-size:10px;color:var(--text-danger)">Atrasada</div>` : ''}
+          ${!atrasada && dr !== null && e.status === 'execucao' ? `<div style="font-size:10px;color:var(--text-muted)">${dr >= 0 ? dr + 'd restante(s)' : 'no prazo'}</div>` : ''}
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end">
+          <span class="badge ${e.status==='execucao'?'badge-exec':'badge-aprov'}">${e.status==='execucao'?'Execução':'Concluído'}</span>
+          ${pgBadge}
+          ${e.status==='execucao' ? `<button class="btn-sm" onclick="${e.isDiariaAvulsa ? `abrirEditarDiaria('${e.id}')` : `abrirEditarEtapa('${e.id}')`}" style="font-size:11px;padding:5px 8px"><i class="ti ti-edit"></i></button>` : ''}
+          ${e.isDiariaAvulsa && e.status==='concluido' ? `<button class="btn-sm" onclick="abrirEditarDiaria('${e.id}')" style="font-size:11px;padding:5px 8px"><i class="ti ti-edit"></i></button>` : ''}
+          ${e.status==='execucao' ? `<button class="btn-sm" onclick="abrirFotoExtra('${e.id}')" style="font-size:11px;padding:5px 8px"><i class="ti ti-camera-plus"></i></button>` : ''}
+          ${e.isDiariaAvulsa && e.status==='execucao' ? `<button class="btn-sm btn-success" onclick="concluirDiariaAntiga('${e.id}')" style="font-size:11px;padding:5px 8px">Concluir</button>` : ''}
+          ${!e.isDiariaAvulsa && e.status==='execucao' ? `<button class="btn-sm btn-success" onclick="abrirConcluir('${e.id}')" style="font-size:11px;padding:5px 8px">Concluir</button>` : ''}
+          <button class="btn-sm btn-danger" onclick="excluirEtapaAcao('${e.id}')" style="font-size:11px;padding:5px 8px"><i class="ti ti-trash"></i></button>
+        </div>
       </div>
-      <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end">
-        <span class="badge ${e.status==='execucao'?'badge-exec':'badge-aprov'}">${e.status==='execucao'?'Execução':'Concluído'}</span>
-        ${pgBadge}
-        ${e.status==='execucao' ? `<button class="btn-sm" onclick="${e.isDiariaAvulsa ? `abrirEditarDiaria('${e.id}')` : `abrirEditarEtapa('${e.id}')`}" style="font-size:11px;padding:5px 8px"><i class="ti ti-edit"></i></button>` : ''}
-        ${e.isDiariaAvulsa && e.status==='concluido' ? `<button class="btn-sm" onclick="abrirEditarDiaria('${e.id}')" style="font-size:11px;padding:5px 8px"><i class="ti ti-edit"></i></button>` : ''}
-        ${e.status==='execucao' ? `<button class="btn-sm" onclick="abrirFotoExtra('${e.id}')" style="font-size:11px;padding:5px 8px"><i class="ti ti-camera-plus"></i></button>` : ''}
-        ${e.isDiariaAvulsa && e.status==='execucao' ? `<button class="btn-sm btn-success" onclick="concluirDiariaAntiga('${e.id}')" style="font-size:11px;padding:5px 8px">Concluir</button>` : ''}
-        ${!e.isDiariaAvulsa && e.status==='execucao' ? `<button class="btn-sm btn-success" onclick="abrirConcluir('${e.id}')" style="font-size:11px;padding:5px 8px">Concluir</button>` : ''}
-        <button class="btn-sm btn-danger" onclick="excluirEtapaAcao('${e.id}')" style="font-size:11px;padding:5px 8px"><i class="ti ti-trash"></i></button>
-      </div>
+      ${temFotos ? fotosHTML(e.fotoAntes, e.fotoDepois, e.fotosExtras) : ''}
     </div>`;
   }).join('') + '</div>';
 }
@@ -1172,8 +1431,9 @@ function atualizarAprovacaoVazia() {
   const temPagamentos = db_pagamentosAdmin.length > 0;
   const temSolicitacoes = db_solicitacoes.length > 0;
   const temOrcamentos = db_orcamentos.some(o => o.status === 'pendente');
+  const temFechamentosContestados = db_fechamentos.some(f => f.statusCliente === 'contestado');
   const vazia = document.getElementById('aprovacao-vazia');
-  if (vazia) vazia.style.display = (!temPagamentos && !temSolicitacoes && !temOrcamentos) ? 'block' : 'none';
+  if (vazia) vazia.style.display = (!temPagamentos && !temSolicitacoes && !temOrcamentos && !temFechamentosContestados) ? 'block' : 'none';
 }
 
 function renderAprovacao() {
@@ -1574,7 +1834,10 @@ window.confirmarAceiteSolicitacao = async function() {
   if(!nome) { toast('Informe o nome da obra'); return; }
   const btn = document.getElementById('btn-aceitar-solicitacao'); btn.disabled=true; btn.textContent='Criando...';
   try {
-    await criarObra({ nome, clienteId: s.clienteId||null, local: document.getElementById('aceitar-local').value.trim(), inicio: document.getElementById('aceitar-inicio').value, fim: document.getElementById('aceitar-fim').value, desc: s.desc||'', mostrarPedreiro: document.getElementById('aceitar-mostrar-pedreiro').checked });
+    const novaObraId = await criarObra({ nome, clienteId: s.clienteId||null, local: document.getElementById('aceitar-local').value.trim(), inicio: document.getElementById('aceitar-inicio').value, fim: document.getElementById('aceitar-fim').value, desc: s.desc||'', mostrarPedreiro: document.getElementById('aceitar-mostrar-pedreiro').checked });
+    for (const item of s.etapasSimuladas || []) {
+      await criarEtapa(novaObraId, { tipo: item.tipo, val: String(item.subtotal).replace('.', ','), metros: item.m2, status: 'execucao' });
+    }
     await atualizarSolicitacao(s.id, { status: 'aceita' });
     window.closeModal('modal-aceitar-solicitacao'); toast('Obra criada!'); window.goPage('obras');
   } catch(e) { toast('Erro ao criar obra'); }
@@ -2010,13 +2273,15 @@ window.contestarPagamentoCliente = async function(pagId) {
 // ============================================================
 let etapasCobrancaSelecionadas = [];
 
-window.abrirNovaCobranca = function() {
+window.abrirNovaCobranca = async function() {
   etapasCobrancaSelecionadas = [];
   document.getElementById('cob-mensagem').value = '';
-  document.getElementById('cob-pix-chave').value = '';
-  document.getElementById('cob-pix-nome').value = '';
-  document.getElementById('cob-pix-banco').value = '';
-  document.getElementById('cob-pix-tipo').value = 'cpf';
+  if (!configPagamentoCache) configPagamentoCache = await obterConfigPagamento();
+  const cfg = configPagamentoCache || {};
+  document.getElementById('cob-pix-tipo').value = cfg.pix?.tipo || 'cpf';
+  document.getElementById('cob-pix-chave').value = cfg.pix?.chave || '';
+  document.getElementById('cob-pix-nome').value = cfg.pix?.nome || '';
+  document.getElementById('cob-pix-banco').value = cfg.pix?.banco || '';
   document.getElementById('cob-etapas-area').style.display = 'none';
 
   // Popular clientes

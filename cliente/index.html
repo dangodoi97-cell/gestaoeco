@@ -58,6 +58,7 @@
     <h1>EcoSistema</h1>
     <div class="sub" id="topbar-sub">Bem-vindo</div>
   </div>
+  <button class="icon-btn" onclick="abrirPerfil()"><i class="ti ti-user-circle"></i></button>
   <button class="icon-btn" onclick="sairConta()"><i class="ti ti-logout"></i></button>
 </div>
 
@@ -71,7 +72,7 @@
 
 <!-- DETALHE OBRA -->
 <div id="page-obra-detalhe" class="page">
-  <button class="back-btn" onclick="goPage('obras')"><i class="ti ti-arrow-left"></i> Voltar</button>
+  <button class="back-btn" onclick="voltarObraDetalhe()"><i class="ti ti-arrow-left"></i> Voltar</button>
   <div id="obra-detalhe-header"></div>
   <div id="obra-etapas"></div>
 </div>
@@ -97,6 +98,54 @@
   <div class="card"><div id="lista-precos"></div></div>
 </div>
 
+<!-- SIMULAÇÃO DE ORÇAMENTO -->
+<div id="page-simulacao" class="page">
+  <div class="section-label">Simulação de orçamento</div>
+  <div class="card">
+    <div class="mb"><label>Nome da obra desejada</label><input type="text" id="sim-nome-obra" placeholder="Ex: Reforma da cozinha"></div>
+    <div class="g2 mb">
+      <div><label>Serviço</label>
+        <select id="sim-tipo-servico"></select>
+      </div>
+      <div><label>Metragem (m²)</label><input type="text" id="sim-m2" placeholder="0"></div>
+    </div>
+    <button class="btn-sm btn-success" onclick="adicionarItemSimulacao()"><i class="ti ti-plus"></i> Adicionar item</button>
+  </div>
+  <div class="card" style="margin-top:10px">
+    <div class="sec-title" style="margin-bottom:8px">Itens simulados</div>
+    <div id="lista-sim-itens"></div>
+    <div class="divider"></div>
+    <div class="stat" style="margin-top:8px"><span class="stat-val" id="sim-total" style="font-size:18px">R$ 0,00</span><span class="stat-lbl">Valor total estimado</span></div>
+  </div>
+  <button class="btn-brand" style="margin-top:10px" onclick="solicitarObraSimulada()"><i class="ti ti-send"></i> Desejo solicitar esta obra</button>
+</div>
+
+<!-- PERFIL -->
+<div id="page-perfil" class="page">
+  <button class="back-btn" onclick="goPage('obras')"><i class="ti ti-arrow-left"></i> Voltar</button>
+  <div class="sec-title">Meu perfil</div>
+  <div class="card">
+    <div class="mb"><label>Nome</label><input type="text" id="perfil-nome"></div>
+    <div class="mb" style="margin-bottom:0"><label>Telefone</label><input type="text" id="perfil-telefone"></div>
+  </div>
+  <button class="btn-brand" style="margin-top:10px" onclick="salvarDadosPerfil()"><i class="ti ti-device-floppy"></i> Salvar dados</button>
+
+  <div class="card" style="margin-top:16px">
+    <div class="sec-title" style="margin-bottom:8px">Trocar e-mail</div>
+    <div class="mb"><label>Novo e-mail</label><input type="email" id="perfil-novo-email"></div>
+    <div class="mb" style="margin-bottom:0"><label>Senha atual</label><input type="password" id="perfil-senha-email"></div>
+  </div>
+  <button class="btn-sm" style="width:100%;justify-content:center;margin-top:10px" onclick="salvarTrocaEmail()"><i class="ti ti-mail"></i> Trocar e-mail</button>
+
+  <div class="card" style="margin-top:16px">
+    <div class="sec-title" style="margin-bottom:8px">Trocar senha</div>
+    <div class="mb"><label>Senha atual</label><input type="password" id="perfil-senha-atual"></div>
+    <div class="mb"><label>Nova senha</label><input type="password" id="perfil-senha-nova"></div>
+    <div class="mb" style="margin-bottom:0"><label>Confirmar nova senha</label><input type="password" id="perfil-senha-nova-confirma"></div>
+  </div>
+  <button class="btn-sm" style="width:100%;justify-content:center;margin-top:10px" onclick="salvarTrocaSenha()"><i class="ti ti-lock"></i> Trocar senha</button>
+</div>
+
 <!-- NAV -->
 <nav class="bottom-nav">
   <button class="nav-item active" onclick="goPage('obras')" id="nav-obras"><i class="ti ti-building"></i><span>Obras</span></button>
@@ -104,6 +153,7 @@
   <button class="nav-item" onclick="goPage('financeiro')" id="nav-financeiro"><i class="ti ti-cash"></i><span>Financeiro</span></button>
   <button class="nav-item" onclick="goPage('historico')" id="nav-historico"><i class="ti ti-history"></i><span>Histórico</span></button>
   <button class="nav-item" onclick="goPage('precos')" id="nav-precos"><i class="ti ti-receipt"></i><span>Preços</span></button>
+  <button class="nav-item" onclick="goPage('simulacao')" id="nav-simulacao"><i class="ti ti-calculator"></i><span>Simulação</span></button>
 </nav>
 
 <!-- MODAL: SOLICITAR SERVIÇO -->
@@ -174,6 +224,7 @@
           <option value="pix">PIX</option>
           <option value="transferencia">Transferência bancária</option>
           <option value="dinheiro">Dinheiro</option>
+          <option value="cheque">Cheque</option>
           <option value="outro">Outro</option>
         </select>
       </div>
@@ -201,6 +252,15 @@
         <button class="btn-sm btn-danger" onclick="mostrarFormContestar()" style="flex:1;justify-content:center;padding:12px"><i class="ti ti-alert-circle"></i> Contestar</button>
       </div>
     </div>
+  </div>
+</div>
+
+<!-- MODAL: HISTÓRICO DE FECHAMENTOS -->
+<div class="modal-overlay" id="modal-historico-fechamentos" onclick="bgClose(event,'modal-historico-fechamentos')">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title">Histórico de fechamentos</div>
+    <div id="lista-historico-fechamentos"></div>
   </div>
 </div>
 

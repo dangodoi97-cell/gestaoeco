@@ -9,7 +9,11 @@ import {
   onAuthStateChanged,
   sendPasswordResetEmail,
   updateProfile,
-  doc, setDoc, getDoc
+  updatePassword,
+  updateEmail,
+  reauthenticateWithCredential,
+  EmailAuthProvider,
+  doc, setDoc, getDoc, updateDoc
 } from './firebase-config.js';
 
 import {
@@ -73,6 +77,22 @@ export async function logout() {
 
 export async function recuperarSenha(email) {
   await sendPasswordResetEmail(auth, email);
+}
+
+async function reautenticar(senhaAtual) {
+  const cred = EmailAuthProvider.credential(auth.currentUser.email, senhaAtual);
+  await reauthenticateWithCredential(auth.currentUser, cred);
+}
+
+export async function trocarSenha(senhaAtual, novaSenha) {
+  await reautenticar(senhaAtual);
+  await updatePassword(auth.currentUser, novaSenha);
+}
+
+export async function trocarEmailConta(senhaAtual, novoEmail) {
+  await reautenticar(senhaAtual);
+  await updateEmail(auth.currentUser, novoEmail);
+  await updateDoc(doc(db, 'usuarios', auth.currentUser.uid), { email: novoEmail });
 }
 
 export async function buscarPerfilUsuario(uid) {

@@ -119,7 +119,7 @@ export function escutarTodasEtapas(obras, callback) {
   obras.forEach(o => {
     const q = query(collection(db, 'obras', o.id, 'etapas'), orderBy('criadoEm', 'asc'));
     const unsub = onSnapshot(q, snap => {
-      agregando[o.id] = snap.docs.map(d => ({ id: d.id, obraId: o.id, obraNome: o.nome, ...d.data() }));
+      agregando[o.id] = snap.docs.map(d => ({ id: d.id, obraId: o.id, obraNome: o.nome, clienteId: o.clienteId || null, ...d.data() }));
       const todas = Object.values(agregando).flat();
       callback(todas);
     });
@@ -285,12 +285,38 @@ export async function excluirPagamentoParceiro(parceiroId, pagamentoId) {
 }
 
 // ---------- FECHAMENTOS DE CAIXA ----------
-export async function criarFechamentoCaixa(dados) {
+export async function criarFechamentoCaixa(dadosPublicos, dadosInternos) {
   const ref_ = await addDoc(collection(db, 'fechamentos_caixa'), {
-    ...dados,
+    ...dadosPublicos,
     criadoEm: serverTimestamp()
   });
+  if (dadosInternos) {
+    await setDoc(doc(db, 'fechamentos_caixa', ref_.id, 'interno', 'dados'), dadosInternos);
+  }
   return ref_.id;
+}
+
+export async function atualizarDadosInternosFechamento(fechamentoId, dadosInternos) {
+  await setDoc(doc(db, 'fechamentos_caixa', fechamentoId, 'interno', 'dados'), dadosInternos);
+}
+
+export async function obterDadosInternosFechamento(fechamentoId) {
+  const snap = await getDoc(doc(db, 'fechamentos_caixa', fechamentoId, 'interno', 'dados'));
+  return snap.exists() ? snap.data() : null;
+}
+
+export async function atualizarPerfilUsuario(uid, dados) {
+  await updateDoc(doc(db, 'usuarios', uid), dados);
+}
+
+// ---------- CONFIGURAÇÃO DE PAGAMENTO (padrão reaproveitável nas cobranças) ----------
+export async function obterConfigPagamento() {
+  const snap = await getDoc(doc(db, 'config_pagamento', 'default'));
+  return snap.exists() ? snap.data() : null;
+}
+
+export async function salvarConfigPagamento(dados) {
+  await setDoc(doc(db, 'config_pagamento', 'default'), { ...dados, atualizadoEm: serverTimestamp() }, { merge: true });
 }
 
 export function escutarFechamentosCaixa(callback) {
