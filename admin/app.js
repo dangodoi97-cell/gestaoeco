@@ -426,7 +426,6 @@ async function renderFechamentoCaixa() {
           <div class="fechamento-title">Resumo do período</div>
           <div class="fechamento-periodo">${inicio || '—'}${fim ? ` até ${fim}` : ''}</div>
         </div>
-        <button class="btn-sm btn-success" onclick="salvarFechamentoCaixa('${clienteId}','${inicio}','${fim}',${valorReceberCliente},${valorRepasse},${valorEncargos},${valorDiarias},${valorEtapas},${valorExtrasConfirmados},${lucro})"><i class="ti ti-device-floppy"></i> ${fechamentoEmEdicaoId ? 'Salvar edição' : 'Salvar fechamento'}</button>
       </div>
 
       <div class="fechamento-summary-stack">
@@ -484,7 +483,8 @@ async function renderFechamentoCaixa() {
   lucroEl.innerHTML = `<div class="fechamento-kpi profit ${lucro >= 0 ? 'positive' : 'negative'}">
     <div class="fechamento-kpi-label">Total lucro no período de ${fmtDataCurta(inicio)} à ${fmtDataCurta(fim)}</div>
     <div class="fechamento-kpi-value">${fmtBRL(lucro)}</div>
-  </div>`;
+  </div>
+  <button class="btn-main" style="margin-top:12px" onclick="salvarFechamentoCaixa('${clienteId}','${inicio}','${fim}',${valorReceberCliente},${valorRepasse},${valorEncargos},${valorDiarias},${valorEtapas},${valorExtrasConfirmados},${lucro})"><i class="ti ti-device-floppy"></i> ${fechamentoEmEdicaoId ? 'Salvar edição' : 'Salvar fechamento'}</button>`;
 }
 
 window.adicionarDespesaExtra = function() {
@@ -639,7 +639,8 @@ window.confirmarEnvioFechamento = async function(fechamentoId) {
   await atualizarFechamentoCaixa(f.id, { statusEnvio: 'enviado', enviadoEm: new Date().toISOString() });
 
   toast('Cobrança enviada ao cliente!');
-  window.abrirOpcoesPagamento();
+  window.goPage('consulta-fechamentos');
+  window.abrirDetalheFechamentoConsulta(f.id);
 };
 
 window.reabrirFechamento = async function(fechamentoId) {
@@ -693,7 +694,7 @@ function badgeStatusFechamento(f) {
   chips.push(f.statusEnvio === 'enviado' ? `<span class="badge badge-exec">Enviado</span>` : `<span class="badge badge-pend">Aguardando envio</span>`);
   if (f.statusEnvio === 'enviado') {
     const sc = f.statusCliente || 'pendente';
-    chips.push(sc === 'aceito' ? `<span class="badge badge-aprov">Aceito</span>` : sc === 'contestado' ? `<span class="badge badge-rej">Contestado</span>` : `<span class="badge badge-pend">Aguardando resposta</span>`);
+    chips.push(sc === 'aceito' ? `<span class="badge badge-aprov">Fechamento concluído</span>` : sc === 'contestado' ? `<span class="badge badge-rej">Contestado</span>` : `<span class="badge badge-pend">Aguardando aprovação</span>`);
   }
   return chips.join('');
 }
