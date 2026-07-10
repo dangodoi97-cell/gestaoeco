@@ -660,6 +660,19 @@ window.confirmarEnvioFechamento = async function(fechamentoId) {
   window.abrirDetalheFechamentoConsulta(f.id);
 };
 
+async function entrarEdicaoFechamento(f) {
+  fechamentoEmEdicaoId = f.id;
+  document.getElementById('fechamento-cliente').value = f.clienteId;
+  document.getElementById('fechamento-data-inicio').value = f.periodoInicio;
+  document.getElementById('fechamento-data-fim').value = f.periodoFim;
+  document.getElementById('fechamento-obs-cliente').value = f.observacaoCliente || '';
+  const interno = await obterDadosInternosFechamento(f.id);
+  document.getElementById('fechamento-obs-interna').value = interno?.observacaoInterna || '';
+  window.closeModal('modal-detalhe-fechamento');
+  window.goPage('fechamento');
+  renderFechamentoCaixa();
+}
+
 window.reabrirFechamento = async function(fechamentoId) {
   const f = db_fechamentos.find(x => x.id === fechamentoId);
   if (!f) return;
@@ -672,15 +685,26 @@ window.reabrirFechamento = async function(fechamentoId) {
     }
   }
 
-  fechamentoEmEdicaoId = f.id;
-  document.getElementById('fechamento-cliente').value = f.clienteId;
-  document.getElementById('fechamento-data-inicio').value = f.periodoInicio;
-  document.getElementById('fechamento-data-fim').value = f.periodoFim;
-  document.getElementById('fechamento-obs-cliente').value = f.observacaoCliente || '';
-  const interno = await obterDadosInternosFechamento(f.id);
-  document.getElementById('fechamento-obs-interna').value = interno?.observacaoInterna || '';
-  window.goPage('fechamento');
-  renderFechamentoCaixa();
+  await entrarEdicaoFechamento(f);
+};
+
+window.cancelarEnvioFechamento = async function(fechamentoId) {
+  const f = db_fechamentos.find(x => x.id === fechamentoId);
+  if (!f) return;
+  if (!confirm('Cancelar o envio deste fechamento? As cobranças pendentes serão canceladas e as etapas ficarão livres para um novo envio corrigido.')) return;
+
+  const cobrancasPendentes = db_solicitacoesPagamento.filter(s => s.fechamentoId === fechamentoId && s.status === 'pendente');
+  for (const c of cobrancasPendentes) {
+    for (const e of c.etapas || []) {
+      await atualizarEtapa(c.obraId, e.id, { statusCobranca: null });
+    }
+    await atualizarSolicitacaoPagamento(c.id, { status: 'cancelada' });
+  }
+
+  await atualizarFechamentoCaixa(f.id, { statusEnvio: 'pendente' });
+  toast('Envio cancelado. Edite e salve para reenviar.');
+
+  await entrarEdicaoFechamento(f);
 };
 
 function renderFechamentosContestados() {
@@ -793,7 +817,8 @@ async function renderDetalheFechamentoConsulta(fechamentoId) {
     <div class="divider"></div>
     <div class="sec-title" style="margin:10px 0 4px">Cobranças</div>
     ${cobrancasHTML}
-    ${f.statusCliente === 'contestado' ? `<button class="btn-sm btn-success" style="width:100%;justify-content:center;margin-top:12px" onclick="closeModal('modal-detalhe-fechamento');reabrirFechamento('${f.id}')"><i class="ti ti-edit"></i> Reabrir para edição</button>` : ''}
+    ${f.statusCliente === 'contestado' ? `<button class="btn-sm btn-success" style="width:100%;justify-content:center;margin-top:12px" onclick="reabrirFechamento('${f.id}')"><i class="ti ti-edit"></i> Reabrir para edição</button>` : ''}
+    ${f.statusEnvio === 'enviado' && (f.statusCliente || 'pendente') === 'pendente' ? `<button class="btn-sm btn-danger" style="width:100%;justify-content:center;margin-top:12px" onclick="cancelarEnvioFechamento('${f.id}')"><i class="ti ti-x"></i> Cancelar envio</button>` : ''}
   `;
 }
 
